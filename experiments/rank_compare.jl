@@ -30,7 +30,7 @@ fkt_deg = 10
 # num_points = 2000
 for num_points in [1_500 3_000 6_000]
     println("\n\nN=",num_points)
-    x_vecs = [randn(d)./8 for _ in 1:num_points]
+    x_vecs = [randn(d)s for _ in 1:num_points]
     # y_vecs = [randn(d)./8 for _ in 1:num_points]
     truth_mat  = mat_kern.(x_vecs, permutedims(x_vecs))
 
