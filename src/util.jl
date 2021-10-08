@@ -58,3 +58,9 @@ function transform_coef(k3, k2, k1, degree, pij, a_vals, b, xp)
     end
     return tot3 * multinomial(xp...)*multinomial([k1,k2,k3]...)*((1.0/b)^(2k1+2k2+2k3))*((-2.0)^k3)
 end
+
+
+
+############################ miscellaneous helpers #############################
+using Combinatorics: doublefactorial
+doublefact(n::Int) = (n < 0) ? BigInt(1) : doublefactorial(n)
