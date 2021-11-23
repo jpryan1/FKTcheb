@@ -13,6 +13,6 @@ include("util.jl")
 include("gegenbauer.jl")
 include("hyperspherical.jl")
 
-export fkt_config, cheb_fkt
+export fkt_config, degen_kern_harmonic, gegenbauer, A, chebyshev
 
 end # module
