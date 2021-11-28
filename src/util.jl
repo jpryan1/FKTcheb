@@ -6,7 +6,12 @@ struct fkt_config
     b::Float64
     dct_n::Int
     to::TimerOutput
+    rtol::Float64
 end
+
+
+fkt_config(fkt_deg, d, b, dct_n, to) = fkt_config(fkt_deg, d, b, dct_n, to, 1e-6)
+
 
 # Table of coefficients for chebyshev polynomials
 function get_pij_table(p_size::Int)
