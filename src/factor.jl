@@ -18,7 +18,7 @@ function multiply_polys(a,b)
         end
     end
     if adeg+bdeg > length(a)
-        println("ERROR DROPPING TERMS")
+        println("ERROR DROPPING TERMS") # DO NOT DELETE UNLESS TEMPORARILY FOR TIMING
     end
     for i in 1:length(a)
         for j in 1:i
@@ -111,7 +111,8 @@ function get_orthogonal_radials(d, b, degree)
 
     # weight = r^(d-1)
     weight = zeros(2*(degree+d+1))
-    weight[d] = 1
+    weight[1] = 1
+    # weight[d] = 1
 
     # polynomials = [Sym(1)]
     first_poly = zeros(2*(degree+d+1))
@@ -180,19 +181,23 @@ end
 function get_pole_map_trans_table(degree, d, b, a_vals, pij, Binv)
     alpha = (d//2) - 1
 
+    M = 2degree
     pole_count_map = Dict()
     pole_count = 0
 
     trans_table = Dict()
     for harmonic_deg in 0:convert(Int, degree/2) # TODO speed up this is so dumb
         multiindex_length = length(get_multiindices(d, harmonic_deg))
+        # for orth_poly_idx in 0:M
         for orth_poly_idx in 0:(degree-harmonic_deg)
+            # for n in harmonic_deg:2:M
             for n in harmonic_deg:2:(degree-max(orth_poly_idx,harmonic_deg))
                 trans_table[(harmonic_deg,orth_poly_idx,n)] = 0
             end
         end
 
         for harmonic_ord in 1:multiindex_length
+            # for orth_poly_idx in 0:M
             for orth_poly_idx in 0:(degree-harmonic_deg)
                 pole_count += 1
                 pole_count_map[(harmonic_deg,orth_poly_idx,harmonic_ord)] = pole_count
@@ -202,12 +207,15 @@ function get_pole_map_trans_table(degree, d, b, a_vals, pij, Binv)
 
     for harmonic_deg in 0:convert(Int, degree/2)
         multiindex_length = length(get_multiindices(d, harmonic_deg))
+        # for orth_poly_idx in 0:M
         for orth_poly_idx in 0:(degree-harmonic_deg)
             m0 = max(orth_poly_idx,harmonic_deg)
             if mod(m0+degree-harmonic_deg,2) != 0
                 m0+=1
             end
+            # for n in harmonic_deg:2:M
             for n in harmonic_deg:2:(degree-m0)
+                # for m in m0:2:M
                 for m in m0:2:(degree-n)
                     for i in (n+m):2:degree
                         for k3 in harmonic_deg:min(convert(Int, degree/2), min(min(n,m), degree-m))
@@ -249,8 +257,10 @@ function sandbox(lkern, x_vecs::Array{Array{Float64,1},1}, y_vecs::Array{Array{F
     @timeit to "get ortho radials" begin
     # polynomials, l_polys, Binv = get_orthogonal_radials(d, b, degree)
     polynomials, Binv = get_orthogonal_radials(d, b, degree)
+    # polynomials, Binv = get_orthogonal_radials(d, b, 2degree)
     end
 
+    M = 2degree
     rj_hyps = cart2hyp.(x_vecs)
     ra_hyps = cart2hyp.(y_vecs)
 
@@ -261,21 +271,27 @@ function sandbox(lkern, x_vecs::Array{Array{Float64,1},1}, y_vecs::Array{Array{F
     V_mat = zeros(Complex{Float64}, length(pole_count_map), length(y_vecs))
     for harmonic_deg in 0:convert(Int, degree/2)
         x_harmonics, y_harmonics = get_harmonics(normalizer_table, rj_hyps, ra_hyps, harmonic_deg, d)
+        mis = get_multiindices(d, harmonic_deg)
         for harmonic_ord in 1:size(x_harmonics, 2)
+            possibledouble=1
+            if d > 2 && mis[harmonic_ord][end] > 0
+                possibledouble = 2
+            end
+            # for orth_poly_idx in 0:M
             for orth_poly_idx in 0:(degree-harmonic_deg)
                 for (x_idx, x_vec) in enumerate(x_vecs)
+                    # for n in harmonic_deg:2:M
                     for n in harmonic_deg:2:(degree-max(orth_poly_idx,harmonic_deg))
                         U_mat[x_idx, pole_count_map[(harmonic_deg,orth_poly_idx,harmonic_ord)]] += (
                             x_harmonics[x_idx, harmonic_ord]
                             * norm(x_vec)^(n)
-                            * trans_table[(harmonic_deg,orth_poly_idx,n)])
+                            * trans_table[(harmonic_deg,orth_poly_idx,n)]) * possibledouble
                     end
                 end
                 for (y_idx, y_vec) in enumerate(y_vecs)
                     # V_mat[pole_count_map[(harmonic_deg,orth_poly_idx,harmonic_ord)], y_idx] = (
                     #     y_harmonics[y_idx, harmonic_ord]
                     #     * l_polys[orth_poly_idx+1](norm(y_vec)))
-
                     V_mat[pole_count_map[(harmonic_deg,orth_poly_idx,harmonic_ord)], y_idx] = (
                         y_harmonics[y_idx, harmonic_ord]
                         * evaluate_poly(polynomials[orth_poly_idx+1], norm(y_vec)))
@@ -291,12 +307,16 @@ function sandbox(lkern, x_vecs::Array{Array{Float64,1},1}, y_vecs::Array{Array{F
     x = Sym("x")
     @timeit to "form upolys vpolys" begin
     for harmonic_deg in 0:convert(Int, degree/2)
+        # for orth_poly_idx in 0:M
         for orth_poly_idx in 0:(degree-harmonic_deg)
             # x_poly = 0
             x_poly = zeros(2*(degree+d+1))
+            # x_poly = zeros(2*(2degree+d+1))
+            # for n in harmonic_deg:2:M
             for n in harmonic_deg:2:(degree-max(orth_poly_idx,harmonic_deg))
                 # x_poly += (x^n)*trans_table[(harmonic_deg,orth_poly_idx,n)]
                 xtothenp1 = zeros(2*(degree+d+1))
+                # xtothenp1 = zeros(2*(2degree+d+1))
                 xtothenp1[n+1] = 1
                 x_poly += xtothenp1*trans_table[(harmonic_deg,orth_poly_idx,n)]
             end
@@ -310,14 +330,18 @@ function sandbox(lkern, x_vecs::Array{Array{Float64,1},1}, y_vecs::Array{Array{F
     integrations = Dict()
     for harmonic_deg in 0:convert(Int, degree/2)
         N_k_alpha = gegenbauer_normalizer(d, harmonic_deg)
+        # for orth_poly_idx1 in 0:M
         for orth_poly_idx1 in 0:(degree-harmonic_deg)
+            # for orth_poly_idx2 in 0:M
             for orth_poly_idx2 in 0:(degree-harmonic_deg)
                 # prod_poly =  U_polys[(harmonic_deg, orth_poly_idx1)]*V_polys[(harmonic_deg, orth_poly_idx2)]
                 prod_poly =  multiply_polys(U_polys[(harmonic_deg, orth_poly_idx1)],V_polys[(harmonic_deg, orth_poly_idx2)])
 
                 # integrations[(harmonic_deg, orth_poly_idx1, orth_poly_idx2)] =  N_k_alpha*integrate(prod_poly*x^(d-1), (x, 0,b))
                 xtothed = zeros(2*(degree+d+1))
-                xtothed[d] = 1
+                # xtothed = zeros(2*(2degree+d+1))
+                # xtothed[d] = 1
+                xtothed[1] = 1
                 integrations[(harmonic_deg, orth_poly_idx1, orth_poly_idx2)] =  (
                       N_k_alpha
                     * integrate_poly(
@@ -334,12 +358,14 @@ function sandbox(lkern, x_vecs::Array{Array{Float64,1},1}, y_vecs::Array{Array{F
     for harmonic_deg in 0:convert(Int, degree/2)
         multiindex_length = length(get_multiindices(d, harmonic_deg))
         for harmonic_ord in 1:multiindex_length
+            # for orth_poly_idx in 0:M
             for orth_poly_idx in 0:(degree-harmonic_deg)
                 pole_count += 1
                 pole_count2 = 0
                 for harmonic_deg2 in 0:convert(Int, degree/2)
                     multiindex_length2 = length(get_multiindices(d, harmonic_deg2))
                     for harmonic_ord2 in 1:multiindex_length2
+                        # for orth_poly_idx2 in 0:M
                         for orth_poly_idx2 in 0:(degree-harmonic_deg2)
                            pole_count2 += 1
                             if harmonic_deg != harmonic_deg2 || harmonic_ord != harmonic_ord2
@@ -379,8 +405,8 @@ function sandbox(lkern, x_vecs::Array{Array{Float64,1},1}, y_vecs::Array{Array{F
     new_U_mat = transpose(V_mat)[:,1:size(evecs,1)]*evecs
     new_V_mat = diagm(evals)*conj(transpose(evecs))*conj(V_mat)[1:size(evecs,1),:]
     end
-    return new_U_mat, new_V_mat
-    # return U_mat, V_mat
+    # return new_U_mat, new_V_mat
+    return U_mat, V_mat
 end
 
 

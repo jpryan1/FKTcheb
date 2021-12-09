@@ -141,11 +141,11 @@ function get_multiindices(d::Int, k::Int)
             break
         end
         push!(multiindices, copy(current_index))
-        if current_index[d-2] != 0
-            current_index[d-2] *= -1
-            push!(multiindices, copy(current_index))
-            current_index[d-2] *= -1
-        end
+        # if current_index[d-2] != 0
+        #     current_index[d-2] *= -1
+        #     push!(multiindices, copy(current_index))
+        #     current_index[d-2] *= -1
+        # end
     end
     return multiindices # d - 2 indices, ordered, last can be neg
 end
