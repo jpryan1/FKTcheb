@@ -1,7 +1,7 @@
 # Poly will be vec of length 2p
 # multiply will double check at first to make sure nothing bad happens
 
-function multiply_polys(a,b)
+function multiply_polys(a::Array{Float64, 1}, b::Array{Float64, 1})
     ans = zeros(length(a))
     adeg = 0
     for i in length(a):-1:1
@@ -29,7 +29,8 @@ function multiply_polys(a,b)
     return ans
 end
 
-function integrate_poly(p, b)
+
+function integrate_poly(p::Array{Float64, 1}, b::Float64)
     tot = 0
     for i in 1:length(p)
         tot += ((b^i)/i)*p[i]
@@ -37,12 +38,90 @@ function integrate_poly(p, b)
     return tot
 end
 
-function evaluate_poly(p, x)
+
+function poly_mat_to_mat(pm::Array{Array{Float64, 1}, 1}, data_pows::Array{Array{Float64, 1}, 1}, pm_deg::Int64)
+    mat = zeros(length(data_pows[1]), length(pm))
+    for j in 1:length(pm)
+        mat[:,j] = sum(pm[j][i]*data_pows[i] for i in 1:pm_deg)
+    end
+    return mat
+end
+
+
+function poly_col_dot(poly1::Array{Float64, 1},
+                        poly2::Array{Float64, 1},
+                            data_pow_sums::Array{Float64, 1})
+    poly_dot = multiply_polys(poly1,poly2)
     tot = 0
-    for i in 1:length(p)
-        tot += p[i]*(x^(i-1))
+    for i in 1:length(poly_dot)
+        tot += poly_dot[i]*data_pow_sums[i]
     end
     return tot
+end
+
+
+function qr_poly_mat(pm::Array{Array{Float64, 1}, 1}, data_pow_sums::Array{Float64, 1}) # TODO check acc of this
+    r_mat = zeros(length(pm), length(pm))
+    new_polys = [copy(pm[i]) for i in 1:length(pm)]
+
+    for i in 1:length(pm)
+        current_poly = new_polys[i]
+        max_norm = sqrt(max(0,poly_col_dot(current_poly,current_poly, data_pow_sums)))
+        tmp = max_norm
+        max_norm_idx = i
+        for j in (i+1):length(pm)
+            current_poly = new_polys[j]
+            curr_norm = sqrt(max(0,poly_col_dot(current_poly,current_poly, data_pow_sums)))
+            if curr_norm > max_norm
+                max_norm = curr_norm
+                max_norm_idx = j
+            end
+        end
+
+        if max_norm < 1e-6
+            new_polys = new_polys[1:(i-1)]
+            break
+        end
+        cpy = copy(new_polys[i])
+        new_polys[i] = copy(new_polys[max_norm_idx])
+        new_polys[max_norm_idx] = cpy
+
+        new_polys[i] = new_polys[i]/max_norm
+        for j in (i+1):length(new_polys)
+            dotprod = poly_col_dot(new_polys[i], new_polys[j], data_pow_sums)
+            new_polys[j] .-= (dotprod) * new_polys[i]
+        end
+    end
+    for i in 1:length(pm)
+        for j in 1:length(new_polys)
+            r_mat[j,i] = poly_col_dot(new_polys[j], pm[i], data_pow_sums)
+        end
+    end
+    return new_polys, r_mat[1:length(new_polys), :]
+end
+
+
+function pm_mul_mat(pm::Array{Array{Float64, 1}, 1}, mat::Array{Float64, 2})
+    new_polys = Array{Array{Float64,1},1}(undef, size(mat, 2))
+    for j in 1:size(mat, 2)
+        cur_poly = zeros(length(pm[1]))
+        for i in 1:size(mat,1)
+            cur_poly .+= (mat[i,j] * pm[i])
+        end
+        new_polys[j] = cur_poly
+    end
+    return new_polys
+end
+
+
+function pm_mul_pm(pm1::Array{Array{Float64, 1}, 1}, pm2::Array{Array{Float64, 1}, 1}, data_pow_sums::Array{Float64, 1})
+    out = zeros(length(pm1), length(pm2))
+    for i in 1:size(out,1)
+        for j in 1:size(out,2)
+            out[i,j] = poly_col_dot(pm1[i], pm2[j], data_pow_sums)
+        end
+    end
+    return out
 end
 
 
@@ -78,102 +157,41 @@ function A(j::Int, k::Int, alpha::Real)
 end
 
 
-function get_harmonics(normalizer_table, rj_hyps, ra_hyps, j, d)
-    max_length_multi = max_num_multiindices(d, size(normalizer_table,1)-1)
-
-    hyp_harms = zeros(Complex{Float64}, length(rj_hyps), max_length_multi) # pre-allocating
-    hyp_harms_a = zeros(Complex{Float64}, length(ra_hyps), max_length_multi) # pre-allocating
-
-    N_k_alpha = gegenbauer_normalizer(d, j)
-    # println(gegenbauer_normalizer(d, j))
-    multiindices =  get_multiindices(d, j)
-    hyp_harms_k = @view hyp_harms[:, 1:length(multiindices)]
+function get_harmonics(normalizer_table, rj_hyps, j, d)
+    multiindices = get_multiindices(d, j)
+    hyp_harms_k = zeros( length(rj_hyps), length(multiindices))
     if d > 2
         hyp_harms_k .= hyperspherical.(rj_hyps, j, permutedims(multiindices), Val(false)) # needs to be normalized
         hyp_harms_k ./= normalizer_table[j+1, 1:length(multiindices)]'
     elseif d == 2
         hyp_harms_k .= hypospherical.(rj_hyps, j, permutedims(multiindices)) # needs to be normalized
     end
-    hyp_harms_k =  N_k_alpha * conj(hyp_harms_k)
-
-    hyp_harms_k_a = @view hyp_harms_a[:, 1:length(multiindices)]
-    if d > 2 # TODO: abstract away
-        hyp_harms_k_a .= hyperspherical.(ra_hyps, j, permutedims(multiindices), Val(false))
-        hyp_harms_k_a ./= normalizer_table[j+1, 1:length(multiindices)]'
-    elseif d == 2
-        hyp_harms_k_a .= hypospherical.(ra_hyps, j, permutedims(multiindices)) # needs to be normalized
-    end
-    return hyp_harms_k, hyp_harms_k_a
+    return sqrt(gegenbauer_normalizer(d, j))*hyp_harms_k
 end
 
 function get_orthogonal_radials(d, b, degree)
     r = Sym("r")
 
-    # weight = r^(d-1)
     weight = zeros(2*(degree+d+1))
     weight[1] = 1
-    # weight[d] = 1
 
-    # polynomials = [Sym(1)]
     first_poly = zeros(2*(degree+d+1))
     first_poly[1] = 1
     polynomials = [first_poly]
 
-    # polynomials[1] /= sqrt(integrate(weight*(polynomials[1]^2), (r,0,b)))
-    polynomials[1] /= sqrt(
-                        integrate_poly(
-                            multiply_polys(weight,
-                            multiply_polys(polynomials[1],polynomials[1])),
-                            b))
-
     for i in 2:(degree+1)
-        # current = r^(i-1)
         current = zeros(2*(degree+d+1))
         current[i] = 1
-
-        for j in 1:(i-1)
-
-            # current -= polynomials[j] * (integrate(weight*polynomials[j]*r^(i-1), (r, 0, b))
-            #         / integrate(weight*polynomials[j]^2, (r, 0, b)))
-            rtothei = zeros(2*(degree+d+1))
-            rtothei[i] = 1
-            current -= (polynomials[j] *
-                        integrate_poly(
-                        multiply_polys(weight,
-                        multiply_polys(polynomials[j],rtothei)),b)
-                        / integrate_poly(
-                            multiply_polys(weight,
-                            multiply_polys(polynomials[j],polynomials[j])),b))
-        end
-        # norm = sqrt(integrate(weight*current^2, (r,0,b)))
-        norm = sqrt(integrate_poly(multiply_polys(weight,
-                    multiply_polys(current, current)), b))
-
-                    # push!(polynomials, expand(current/norm))
-        push!(polynomials, current/norm)
+        push!(polynomials, current)
     end
 
-    # l_polys = []
-    # for p in polynomials
-    #     push!(l_polys, lambdify(p, [r]))
-    # end
     B = zeros(degree+1,degree+1)
-    # for i in 1:(degree+1)
-    #     for j in 1:(degree+1)
-    #         if j == 1
-    #             B[i,j] = subs(polynomials[i], r=>0)
-    #         else
-    #             B[i,j] = polynomials[i].coeff(r^(j-1))
-    #         end
-    #     end
-    # end
     for i in 1:(degree+1)
         for j in 1:(degree+1)
             B[i,j] = polynomials[i][j]
         end
     end
     Binv = inv(B)
-    # return polynomials, l_polys, Binv
     return polynomials, Binv
 end
 
@@ -240,7 +258,7 @@ function get_pole_map_trans_table(degree, d, b, a_vals, pij, Binv)
     return pole_count_map, trans_table
 end
 
-function sandbox(lkern, x_vecs::Array{Array{Float64,1},1}, y_vecs::Array{Array{Float64,1},1}, fkt_config)
+function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_config)
     r = Sym("r")
 
     to     = fkt_config.to
@@ -254,168 +272,94 @@ function sandbox(lkern, x_vecs::Array{Array{Float64,1},1}, y_vecs::Array{Array{F
         a_vals[i+1] = dct(lkern, i, b, fkt_config.dct_n)
     end
 
-    @timeit to "get ortho radials" begin
-    # polynomials, l_polys, Binv = get_orthogonal_radials(d, b, degree)
     polynomials, Binv = get_orthogonal_radials(d, b, degree)
-    # polynomials, Binv = get_orthogonal_radials(d, b, 2degree)
-    end
 
     M = 2degree
-    rj_hyps = cart2hyp.(x_vecs)
-    ra_hyps = cart2hyp.(y_vecs)
+    @timeit to "cart2hyp" rj_hyps = cart2hyp.(x_vecs)
 
     normalizer_table = hyper_normalizer_table(d, convert(Int, degree/2))
-    @timeit to "populate umat vmat" begin
-    pole_count_map, trans_table = get_pole_map_trans_table(degree, d, b, a_vals, pij, Binv) # TODO generate pij, binv, avals in function
-    U_mat = zeros(Complex{Float64}, length(x_vecs), length(pole_count_map))
-    V_mat = zeros(Complex{Float64}, length(pole_count_map), length(y_vecs))
-    for harmonic_deg in 0:convert(Int, degree/2)
-        x_harmonics, y_harmonics = get_harmonics(normalizer_table, rj_hyps, ra_hyps, harmonic_deg, d)
-        mis = get_multiindices(d, harmonic_deg)
-        for harmonic_ord in 1:size(x_harmonics, 2)
-            possibledouble=1
-            if d > 2 && mis[harmonic_ord][end] > 0
-                possibledouble = 2
-            end
-            # for orth_poly_idx in 0:M
-            for orth_poly_idx in 0:(degree-harmonic_deg)
-                for (x_idx, x_vec) in enumerate(x_vecs)
-                    # for n in harmonic_deg:2:M
-                    for n in harmonic_deg:2:(degree-max(orth_poly_idx,harmonic_deg))
-                        U_mat[x_idx, pole_count_map[(harmonic_deg,orth_poly_idx,harmonic_ord)]] += (
-                            x_harmonics[x_idx, harmonic_ord]
-                            * norm(x_vec)^(n)
-                            * trans_table[(harmonic_deg,orth_poly_idx,n)]) * possibledouble
-                    end
-                end
-                for (y_idx, y_vec) in enumerate(y_vecs)
-                    # V_mat[pole_count_map[(harmonic_deg,orth_poly_idx,harmonic_ord)], y_idx] = (
-                    #     y_harmonics[y_idx, harmonic_ord]
-                    #     * l_polys[orth_poly_idx+1](norm(y_vec)))
-                    V_mat[pole_count_map[(harmonic_deg,orth_poly_idx,harmonic_ord)], y_idx] = (
-                        y_harmonics[y_idx, harmonic_ord]
-                        * evaluate_poly(polynomials[orth_poly_idx+1], norm(y_vec)))
-                end
+    @timeit to "trans table" pole_count_map, trans_table = get_pole_map_trans_table(degree, d, b, a_vals, pij, Binv) # TODO generate pij, binv, avals in function
 
-            end
-        end
-    end
-    end
 
-    U_polys = Dict()
-    V_polys = Dict()
-    x = Sym("x")
-    @timeit to "form upolys vpolys" begin
+    radial_mats = []
+    top_sing = -1
+    rank = 0
+    @timeit to "x data " x_data = [norm(x_vec) for x_vec in x_vecs]
+    @timeit to "x data pows" data_pows = [x_data .^ (i-1) for i in 1:2*(degree+d+1)]
+    @timeit to "x data sums" x_data_pow_sums = [sum(data_pows[i]) for i in 1:length(data_pows)]
+
+    y_polys = polynomials[1:(degree+1)]
+    radial_y = y_polys
+    @timeit to "y qr" qy, ly = qr_poly_mat(radial_y, x_data_pow_sums)
+
+    @timeit to "First loop" begin
+    poly_mats = []
     for harmonic_deg in 0:convert(Int, degree/2)
-        # for orth_poly_idx in 0:M
+        x_polys = Array{Array{Float64,1},1}(undef, degree-harmonic_deg+1)
+        @timeit to "x polys" begin
         for orth_poly_idx in 0:(degree-harmonic_deg)
-            # x_poly = 0
-            x_poly = zeros(2*(degree+d+1))
-            # x_poly = zeros(2*(2degree+d+1))
-            # for n in harmonic_deg:2:M
+            cur_poly = zeros(2*(degree+d+1))
             for n in harmonic_deg:2:(degree-max(orth_poly_idx,harmonic_deg))
-                # x_poly += (x^n)*trans_table[(harmonic_deg,orth_poly_idx,n)]
-                xtothenp1 = zeros(2*(degree+d+1))
-                # xtothenp1 = zeros(2*(2degree+d+1))
-                xtothenp1[n+1] = 1
-                x_poly += xtothenp1*trans_table[(harmonic_deg,orth_poly_idx,n)]
+                cur_poly[n+1] = trans_table[(harmonic_deg,orth_poly_idx,n)]
             end
-            U_polys[(harmonic_deg, orth_poly_idx)] = x_poly
-            # V_polys[(harmonic_deg, orth_poly_idx)] = subs(polynomials[orth_poly_idx+1], r=>x)
-            V_polys[(harmonic_deg, orth_poly_idx)] = polynomials[orth_poly_idx+1]
+            x_polys[orth_poly_idx+1] = cur_poly
         end
-    end
-    end
-    @timeit to "get integrations" begin
-    integrations = Dict()
-    for harmonic_deg in 0:convert(Int, degree/2)
-        N_k_alpha = gegenbauer_normalizer(d, harmonic_deg)
-        # for orth_poly_idx1 in 0:M
-        for orth_poly_idx1 in 0:(degree-harmonic_deg)
-            # for orth_poly_idx2 in 0:M
-            for orth_poly_idx2 in 0:(degree-harmonic_deg)
-                # prod_poly =  U_polys[(harmonic_deg, orth_poly_idx1)]*V_polys[(harmonic_deg, orth_poly_idx2)]
-                prod_poly =  multiply_polys(U_polys[(harmonic_deg, orth_poly_idx1)],V_polys[(harmonic_deg, orth_poly_idx2)])
+        end
 
-                # integrations[(harmonic_deg, orth_poly_idx1, orth_poly_idx2)] =  N_k_alpha*integrate(prod_poly*x^(d-1), (x, 0,b))
-                xtothed = zeros(2*(degree+d+1))
-                # xtothed = zeros(2*(2degree+d+1))
-                # xtothed[d] = 1
-                xtothed[1] = 1
-                integrations[(harmonic_deg, orth_poly_idx1, orth_poly_idx2)] =  (
-                      N_k_alpha
-                    * integrate_poly(
-                        multiply_polys(prod_poly,
-                        xtothed), b))
+        radial_x = x_polys
+        lq_rank = min(degree-harmonic_deg+1, length(qy))
+        curr_qy = qy[1:lq_rank]
+        curr_ly = ly[1:lq_rank, 1:(degree-harmonic_deg+1)]
+        laq = curr_ly * pm_mul_pm(radial_x, curr_qy, x_data_pow_sums)
+        @timeit to "svd" umid, smid, vmid = svd(laq)
+        if harmonic_deg == 0
+            top_sing = smid[1]
+        end
+        leftmat = pm_mul_mat(curr_qy,umid)
+        for i in 1:length(smid)
+            if smid[i] / top_sing < rtol
+                smid = smid[1:i]
+                leftmat = leftmat[1:i]
+                break
             end
         end
+        rank += length(smid)*length(get_multiindices(d, harmonic_deg))
+        pm_mul = pm_mul_mat(leftmat, diagm(sqrt.(smid)))
+        push!(poly_mats, pm_mul)
     end
     end
-    Cmat = zeros(length(pole_count_map),length(pole_count_map))
-    pole_count     = 0
-    integral_count = 0
-    @timeit to "form cmat" begin
+    @timeit to "u alloc" U_mat = zeros( length(x_vecs),rank)
+
+    cur_idx = 0
+
+    @timeit to "Second loop" begin
+
     for harmonic_deg in 0:convert(Int, degree/2)
-        multiindex_length = length(get_multiindices(d, harmonic_deg))
-        for harmonic_ord in 1:multiindex_length
-            # for orth_poly_idx in 0:M
-            for orth_poly_idx in 0:(degree-harmonic_deg)
-                pole_count += 1
-                pole_count2 = 0
-                for harmonic_deg2 in 0:convert(Int, degree/2)
-                    multiindex_length2 = length(get_multiindices(d, harmonic_deg2))
-                    for harmonic_ord2 in 1:multiindex_length2
-                        # for orth_poly_idx2 in 0:M
-                        for orth_poly_idx2 in 0:(degree-harmonic_deg2)
-                           pole_count2 += 1
-                            if harmonic_deg != harmonic_deg2 || harmonic_ord != harmonic_ord2
-                                continue
-                            end
-                            Cmat[pole_count, pole_count2] = integrations[(harmonic_deg, orth_poly_idx, orth_poly_idx2)]
-                        end
-                    end
+
+        @timeit to "get harmonics" x_harmonics = get_harmonics(normalizer_table, rj_hyps, harmonic_deg, d)
+        pm_mul = poly_mats[harmonic_deg+1]
+        pm_deg = 0
+        for i in 1:length(pm_mul)
+            for j in 1:length(pm_mul[i])
+                if pm_mul[i][j] != 0
+                    pm_deg = max(pm_deg, j)
                 end
             end
         end
-    end
-    end
-    @timeit to "eigendecompose c" begin
-    evals, evecs = eigen(Cmat)
-    end
-    neg_bound = length(evals)
-    pos_bound = 1
-    for i in 1:length(evals)
-        if abs(real(evals[i])) < 0.1rtol
-            neg_bound = i
-            break
+        @timeit to "pm2m rx" radial_x = poly_mat_to_mat(pm_mul, data_pows, pm_deg)
+        for harmonic_ord in 1:size(x_harmonics, 2)
+            for orth_poly_idx in 0:(size(radial_x,2)-1)
+                cur_idx += 1
+                @timeit to "populate umat " begin
+                for (x_idx, x_vec) in enumerate(x_vecs)
+                    U_mat[x_idx, cur_idx] = (
+                        radial_x[x_idx, orth_poly_idx+1]
+                        * x_harmonics[x_idx, harmonic_ord])
+                end
+            end
+            end
         end
     end
-    for i in length(evals):-1:1
-        if abs(real(evals[i])) < 0.1rtol
-            pos_bound = i
-            break
-        end
     end
-    if pos_bound > neg_bound
-        indices = vcat(collect(1:neg_bound), collect(pos_bound:length(evals)))
-        evals = evals[indices]
-        evecs = evecs[:, indices]
-    end
-    @timeit to "form output mats" begin
-    new_U_mat = transpose(V_mat)[:,1:size(evecs,1)]*evecs
-    new_V_mat = diagm(evals)*conj(transpose(evecs))*conj(V_mat)[1:size(evecs,1),:]
-    end
-    # return new_U_mat, new_V_mat
-    return U_mat, V_mat
-end
-
-
-function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, y_vecs::Array{Array{Float64,1},1}, fkt_config)
-    return sandbox(lkern, x_vecs::Array{Array{Float64,1},1}, y_vecs::Array{Array{Float64,1},1}, fkt_config)
-end
-
-
-
-function degen_kern_nonharmonic(lkern, x_vecs::Array{Array{Float64,1},1}, y_vecs::Array{Array{Float64,1},1}, fkt_config)
-
+    return U_mat[:, 1:cur_idx]
 end

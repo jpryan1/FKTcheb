@@ -42,13 +42,16 @@ function hyperspherical(r::Real, θ::AbstractVector{<:Real}, φ::Real,
     α(j) = (d-j-1) / 2
     prod_gegen = one(r) # product of gegenbauer polynomials
     for j in 1:d-2 # IDEA: @simd
-        α_j = α(j) + μ[j+1]
-        n = μ[j] - μ[j+1]
         sinθ_j, cosθ_j = sincos(θ[j])
-        prod_gegen *= gegenbauer(α_j, n, cosθ_j) * sinθ_j^μ[j+1] # IDEA pre-calculate gegenbauer for all relevant α, n, cosθ
+        prod_gegen *= gegenbauer(α(j) + μ[j+1], μ[j] - μ[j+1], cosθ_j) * sinθ_j^μ[j+1] # IDEA pre-calculate gegenbauer for all relevant α, n, cosθ
     end
-    return prod_gegen * exp(1im * m * φ)
+    if m > 0 return sqrt(2) * ((-1)^m) * prod_gegen * cos(m * φ) end
+    if m < 0 return sqrt(2) * ((-1)^m) * prod_gegen * sin(-m * φ) end
+    return prod_gegen
 end
+
+
+# 2re(exp(1im * m * (φ1+φ2))) = 2cos(φ1+φ2) = 2cos(φ1)cos(φ2) - 2sin(φ1)sin(φ2)
 
 function squared_hyper_normalizer_table(dimension::Int, trunc_param::Int)
     table = hyper_normalizer_table(dimension, trunc_param)
@@ -141,11 +144,11 @@ function get_multiindices(d::Int, k::Int)
             break
         end
         push!(multiindices, copy(current_index))
-        # if current_index[d-2] != 0
-        #     current_index[d-2] *= -1
-        #     push!(multiindices, copy(current_index))
-        #     current_index[d-2] *= -1
-        # end
+        if current_index[d-2] != 0
+            current_index[d-2] *= -1
+            push!(multiindices, copy(current_index))
+            current_index[d-2] *= -1
+        end
     end
     return multiindices # d - 2 indices, ordered, last can be neg
 end

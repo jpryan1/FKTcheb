@@ -35,10 +35,12 @@ mat_kern(x,y) = 1 / (1+norm(x-y)^2)
     cfg = fkt_config(fkt_deg, d, 2max_norm, dct_n, to, rtol)
 
     # Perform FKTcheb
-    U_mat, V_mat = degen_kern_harmonic(lkern, x_vecs, x_vecs, cfg)
-    display(cfg.to)
+    U_mat = degen_kern_harmonic(lkern, x_vecs, cfg)
+    V_mat = transpose(U_mat)
+
+    # display(cfg.to)
     # Get FKTcheb error
-    @test isapprox(real(U_mat*V_mat), truth_mat, rtol = rtol)
+    @test isapprox((U_mat*V_mat), truth_mat, rtol = rtol)
 end
 #
 @testset "4D" begin
@@ -51,11 +53,12 @@ end
     cfg = fkt_config(fkt_deg, d, 2max_norm, dct_n, to, rtol)
 
     # Perform FKTcheb
-    U_mat, V_mat = degen_kern_harmonic(lkern, x_vecs, x_vecs, cfg)
-    display(cfg.to)
+    U_mat = degen_kern_harmonic(lkern, x_vecs, cfg)
+    V_mat = transpose(U_mat)
+    # display(cfg.to)
 
     # Get FKTcheb error
-    @test isapprox(real(U_mat*V_mat), truth_mat, rtol = rtol)
+    @test isapprox((U_mat*V_mat), truth_mat, rtol = rtol)
 end
 
 
@@ -69,11 +72,12 @@ end
     cfg = fkt_config(fkt_deg, d, 2max_norm, dct_n, to, rtol)
 
     # Perform FKTcheb
-    U_mat, V_mat = degen_kern_harmonic(lkern, x_vecs, x_vecs, cfg)
-    display(cfg.to)
+    U_mat = degen_kern_harmonic(lkern, x_vecs, cfg)
+    V_mat = transpose(U_mat)
+    # display(cfg.to)
 
     # Get FKTcheb error
-    @test isapprox(real(U_mat*V_mat), truth_mat, rtol = rtol)
+    @test isapprox((U_mat*V_mat), truth_mat, rtol = rtol)
 end
 
 #
