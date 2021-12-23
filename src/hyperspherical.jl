@@ -9,16 +9,26 @@ function hyperspherical(x::AbstractVector, k::Int, h::AbstractVector{<:Int}, nor
     hyperspherical(x, μ, m, Val(false)) / hyper_normalizer(μ)
 end
 
-function hyperspherical(x::AbstractVector, k::Int, h::AbstractVector{<:Int}, normalized::Val{false})
-    μ, m = get_μ_m(k, h)
-    hyperspherical(x, μ, m, Val(false))
+
+function hyperspherical(hyp::AbstractVector{<:Real}, k::Int, h::AbstractVector{<:Int}, normalized::Val{false})
+    μ = @MVector zeros(Int, length(h) + 1)
+    μ[1] = k
+    μ[2:end] .= h
+    μ[end] = abs(μ[end])
+    m = h[end]
+    d = length(hyp)
+    α(j) = (d-j-1) / 2
+
+    prod_gegen = one(hyp[1]) # product of gegenbauer polynomials
+    for j in 1:d-2 # IDEA: @simd
+        sinθ_j, cosθ_j = sincos(hyp[j+1])
+        prod_gegen *= gegenbauer(α(j) + μ[j+1], μ[j] - μ[j+1], cosθ_j) * sinθ_j^μ[j+1] # IDEA pre-calculate gegenbauer for all relevant α, n, cosθ
+    end
+    if m > 0 return sqrt(2) * ((-1)^m) * prod_gegen * cos(m * hyp[end]) end
+    if m < 0 return sqrt(2) * ((-1)^m) * prod_gegen * sin(-m * hyp[end]) end
+    return prod_gegen
 end
 
-function get_μ_m(k::Int, h::AbstractVector)
-    μ = get_μ(k, h)
-    m = h[end]
-    return μ, m
-end
 
 function get_μ(k::Int, h::AbstractVector)
     μ = @MVector zeros(Int, length(h) + 1)
@@ -32,21 +42,36 @@ end
 # m is last element of multiindex
 # x is in hyper-spherical coordinates
 function hyperspherical(x::AbstractVector{<:Real}, μ::AbstractVector{Int}, m::Int, normalized::Val{false})
-    r, θ, φ = unpack_hyperspherical(x) # unpacking hyper-spherical coordinates
-    hyperspherical(r, θ, φ, μ, m, normalized)
+    # r, θ, φ = unpack_hyperspherical(x) # unpacking hyper-spherical coordinates
+    # hyperspherical(r, θ, φ, μ, m, normalized)
+    hyperspherical(x, μ, m, normalized)
 end
+#
+# function hyperspherical(r::Real, θ::AbstractVector{<:Real}, φ::Real,
+#                         μ::AbstractVector{Int}, m::Int, normalized::Val{false})
+#     d = length(θ) + 2
+#     α(j) = (d-j-1) / 2
+#     prod_gegen = one(r) # product of gegenbauer polynomials
+#     for j in 1:d-2 # IDEA: @simd
+#         sinθ_j, cosθ_j = sincos(θ[j])
+#         prod_gegen *= gegenbauer(α(j) + μ[j+1], μ[j] - μ[j+1], cosθ_j) * sinθ_j^μ[j+1] # IDEA pre-calculate gegenbauer for all relevant α, n, cosθ
+#     end
+#     if m > 0 return sqrt(2) * ((-1)^m) * prod_gegen * cos(m * φ) end
+#     if m < 0 return sqrt(2) * ((-1)^m) * prod_gegen * sin(-m * φ) end
+#     return prod_gegen
+# end
 
-function hyperspherical(r::Real, θ::AbstractVector{<:Real}, φ::Real,
+function hyperspherical(hyp::AbstractVector{<:Real},
                         μ::AbstractVector{Int}, m::Int, normalized::Val{false})
-    d = length(θ) + 2
+    d = length(hyp)
     α(j) = (d-j-1) / 2
-    prod_gegen = one(r) # product of gegenbauer polynomials
+    prod_gegen = one(hyp[1]) # product of gegenbauer polynomials
     for j in 1:d-2 # IDEA: @simd
-        sinθ_j, cosθ_j = sincos(θ[j])
+        sinθ_j, cosθ_j = sincos(hyp[j+1])
         prod_gegen *= gegenbauer(α(j) + μ[j+1], μ[j] - μ[j+1], cosθ_j) * sinθ_j^μ[j+1] # IDEA pre-calculate gegenbauer for all relevant α, n, cosθ
     end
-    if m > 0 return sqrt(2) * ((-1)^m) * prod_gegen * cos(m * φ) end
-    if m < 0 return sqrt(2) * ((-1)^m) * prod_gegen * sin(-m * φ) end
+    if m > 0 return sqrt(2) * ((-1)^m) * prod_gegen * cos(m * hyp[end]) end
+    if m < 0 return sqrt(2) * ((-1)^m) * prod_gegen * sin(-m * hyp[end]) end
     return prod_gegen
 end
 

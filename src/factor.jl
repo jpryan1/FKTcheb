@@ -157,18 +157,6 @@ function A(j::Int, k::Int, alpha::Real)
 end
 
 
-function get_harmonics(normalizer_table, rj_hyps, j, d)
-    multiindices = get_multiindices(d, j)
-    hyp_harms_k = zeros( length(rj_hyps), length(multiindices))
-    if d > 2
-        hyp_harms_k .= hyperspherical.(rj_hyps, j, permutedims(multiindices), Val(false)) # needs to be normalized
-        hyp_harms_k ./= normalizer_table[j+1, 1:length(multiindices)]'
-    elseif d == 2
-        hyp_harms_k .= hypospherical.(rj_hyps, j, permutedims(multiindices)) # needs to be normalized
-    end
-    return sqrt(gegenbauer_normalizer(d, j))*hyp_harms_k
-end
-
 function get_orthogonal_radials(d, b, degree)
     r = Sym("r")
 
@@ -335,8 +323,16 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
     @timeit to "Second loop" begin
 
     for harmonic_deg in 0:convert(Int, degree/2)
-
-        @timeit to "get harmonics" x_harmonics = get_harmonics(normalizer_table, rj_hyps, harmonic_deg, d)
+        mis = get_multiindices(d, harmonic_deg)
+        @timeit to "get harmonics" begin
+        x_harmonics = zeros(length(x_vecs),length(mis))
+        if d > 2
+            x_harmonics .= hyperspherical.(rj_hyps, harmonic_deg, permutedims(mis), Val(false))
+            x_harmonics .= sqrt(gegenbauer_normalizer(d, harmonic_deg))*(x_harmonics ./ normalizer_table[harmonic_deg+1, 1:size(x_harmonics,2)]')
+        elseif d == 2
+            x_harmonics .= sqrt(gegenbauer_normalizer(d, harmonic_deg))*hypospherical.(rj_hyps, harmonic_deg, permutedims(mis))
+        end
+        end
         pm_mul = poly_mats[harmonic_deg+1]
         pm_deg = 0
         for i in 1:length(pm_mul)
@@ -347,10 +343,10 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
             end
         end
         @timeit to "pm2m rx" radial_x = poly_mat_to_mat(pm_mul, data_pows, pm_deg)
+        @timeit to "populate umat " begin
         for harmonic_ord in 1:size(x_harmonics, 2)
             for orth_poly_idx in 0:(size(radial_x,2)-1)
                 cur_idx += 1
-                @timeit to "populate umat " begin
                 for (x_idx, x_vec) in enumerate(x_vecs)
                     U_mat[x_idx, cur_idx] = (
                         radial_x[x_idx, orth_poly_idx+1]
