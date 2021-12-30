@@ -41,9 +41,15 @@ end
 
 function poly_mat_to_mat(pm::Array{Array{Float64, 1}, 1}, data_pows::Array{Array{Float64, 1}, 1}, pm_deg::Int64)
     mat = zeros(length(data_pows[1]), length(pm))
+    # for j in 1:length(pm)
+    #     mat[:,j] = sum(pm[j][i]*data_pows[i] for i in 1:pm_deg)
+    # end
     for j in 1:length(pm)
-        mat[:,j] = sum(pm[j][i]*data_pows[i] for i in 1:pm_deg)
+        for i in 1:pm_deg
+            mat[:,j] .+= pm[j][i]*data_pows[i]
+        end
     end
+
     return mat
 end
 
@@ -212,6 +218,7 @@ function get_pole_map_trans_table(degree, d, b, a_vals, pij, Binv)
     end
 
     for harmonic_deg in 0:convert(Int, degree/2)
+        gegnorm = gegenbauer_normalizer(d, harmonic_deg)
         multiindex_length = length(get_multiindices(d, harmonic_deg))
         # for orth_poly_idx in 0:M
         for orth_poly_idx in 0:(degree-harmonic_deg)
@@ -231,6 +238,7 @@ function get_pole_map_trans_table(degree, d, b, a_vals, pij, Binv)
                             trans_table[(harmonic_deg,orth_poly_idx,n)] += (
                                     Binv[m+1, orth_poly_idx+1]
                                     * a_vals[i+1]
+                                    * gegnorm
                                     * pij[i+1, n+m+1]
                                     * (1-delta(0,i)/2)
                                     * A(harmonic_deg,k3, alpha)
@@ -250,7 +258,17 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
     r = Sym("r")
 
     to     = fkt_config.to
-    b      = fkt_config.b
+    centroid = zeros(length(x_vecs[1]))
+    for x_vec in x_vecs
+        centroid .+= x_vec
+    end
+    centroid ./= length(x_vecs)
+    b=0
+    for i in 1:length(x_vecs)
+        x_vecs[i] -= centroid
+        b=max(b, norm(x_vecs[i]))
+    end
+    b*=2
     degree = fkt_config.fkt_deg
     pij    = get_pij_table(degree+1)
     d      = fkt_config.d
@@ -263,11 +281,13 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
     polynomials, Binv = get_orthogonal_radials(d, b, degree)
 
     M = 2degree
-    @timeit to "cart2hyp" rj_hyps = cart2hyp.(x_vecs)
+    # @timeit to "cart2hyp" rj_hyps = cart2hyp.(x_vecs)
+    rj_hyps = cart2hyp.(x_vecs)
 
     normalizer_table = hyper_normalizer_table(d, convert(Int, degree/2))
-    @timeit to "trans table" pole_count_map, trans_table = get_pole_map_trans_table(degree, d, b, a_vals, pij, Binv) # TODO generate pij, binv, avals in function
-
+    @timeit to "trans table" pole_count_map, trans_table = get_pole_map_trans_table(degree, d, b, a_vals, pij, Binv)
+    #TODO generate pij, binv, avals in function
+    # TODO Speed this up
 
     radial_mats = []
     top_sing = -1
@@ -279,12 +299,14 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
     y_polys = polynomials[1:(degree+1)]
     radial_y = y_polys
     @timeit to "y qr" qy, ly = qr_poly_mat(radial_y, x_data_pow_sums)
+    # guess=poly_mat_to_mat(pm_mul_mat(qy,  ly), data_pows, length(data_pows))
+    # if norm(guess-poly_mat_to_mat(radial_y, data_pows, length(data_pows)),2)/norm(poly_mat_to_mat(radial_y, data_pows, length(data_pows)),2) > 1e-5
+    #     println("\n\nBIG QR ERR\n\n")
+    # end
 
-    @timeit to "First loop" begin
     poly_mats = []
     for harmonic_deg in 0:convert(Int, degree/2)
         x_polys = Array{Array{Float64,1},1}(undef, degree-harmonic_deg+1)
-        @timeit to "x polys" begin
         for orth_poly_idx in 0:(degree-harmonic_deg)
             cur_poly = zeros(2*(degree+d+1))
             for n in harmonic_deg:2:(degree-max(orth_poly_idx,harmonic_deg))
@@ -292,29 +314,32 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
             end
             x_polys[orth_poly_idx+1] = cur_poly
         end
-        end
 
         radial_x = x_polys
         lq_rank = min(degree-harmonic_deg+1, length(qy))
         curr_qy = qy[1:lq_rank]
         curr_ly = ly[1:lq_rank, 1:(degree-harmonic_deg+1)]
         laq = curr_ly * pm_mul_pm(radial_x, curr_qy, x_data_pow_sums)
-        @timeit to "svd" umid, smid, vmid = svd(laq)
+        umid, smid, vmid = svd(laq)
         if harmonic_deg == 0
             top_sing = smid[1]
+            # println("Setting top sing to ", smid[1])
         end
         leftmat = pm_mul_mat(curr_qy,umid)
         for i in 1:length(smid)
-            if smid[i] / top_sing < rtol
-                smid = smid[1:i]
-                leftmat = leftmat[1:i]
+            if (smid[i] / top_sing) < rtol
+                # println("size ", size(laq), " truncating out less than ", rtol," sings ",  smid[(i+1):end]/top_sing, " among ", smid/top_sing)
+
+                smid = smid[1:(i-1)]
+                leftmat = leftmat[1:(i-1)]
+                # smid = smid[1:(i)]
+                # leftmat = leftmat[1:(i)]
                 break
             end
         end
         rank += length(smid)*length(get_multiindices(d, harmonic_deg))
         pm_mul = pm_mul_mat(leftmat, diagm(sqrt.(smid)))
         push!(poly_mats, pm_mul)
-    end
     end
     @timeit to "u alloc" U_mat = zeros( length(x_vecs),rank)
 
@@ -323,17 +348,22 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
     @timeit to "Second loop" begin
 
     for harmonic_deg in 0:convert(Int, degree/2)
+        pm_mul = poly_mats[harmonic_deg+1]
+        if length(pm_mul) == 0
+            break
+        end
+
         mis = get_multiindices(d, harmonic_deg)
         @timeit to "get harmonics" begin
         x_harmonics = zeros(length(x_vecs),length(mis))
         if d > 2
             x_harmonics .= hyperspherical.(rj_hyps, harmonic_deg, permutedims(mis), Val(false))
-            x_harmonics .= sqrt(gegenbauer_normalizer(d, harmonic_deg))*(x_harmonics ./ normalizer_table[harmonic_deg+1, 1:size(x_harmonics,2)]')
+            x_harmonics .= (x_harmonics ./ normalizer_table[harmonic_deg+1, 1:size(x_harmonics,2)]')
         elseif d == 2
-            x_harmonics .= sqrt(gegenbauer_normalizer(d, harmonic_deg))*hypospherical.(rj_hyps, harmonic_deg, permutedims(mis))
+            x_harmonics .= hypospherical.(rj_hyps, harmonic_deg, permutedims(mis))
         end
         end
-        pm_mul = poly_mats[harmonic_deg+1]
+
         pm_deg = 0
         for i in 1:length(pm_mul)
             for j in 1:length(pm_mul[i])

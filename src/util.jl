@@ -3,14 +3,45 @@
 struct fkt_config
     fkt_deg::Int
     d::Int
-    b::Float64
     dct_n::Int
     to::TimerOutput
     rtol::Float64
 end
 
 
-fkt_config(fkt_deg, d, b, dct_n, to) = fkt_config(fkt_deg, d, b, dct_n, to, 1e-6)
+fkt_config(fkt_deg, d, dct_n, to) = fkt_config(fkt_deg, d, dct_n, to, 1e-6)
+
+
+function guess_fkt_err(lkern, x_vecs, fkt_config)
+    centroid = zeros(length(x_vecs[1]))
+    for x_vec in x_vecs
+        centroid .+= x_vec
+    end
+    centroid ./= length(x_vecs)
+    b=0
+    for i in 1:length(x_vecs)
+        x_vecs[i] -= centroid
+        b=max(b, norm(x_vecs[i]))
+    end
+    b*=2
+    
+    degree = fkt_config.fkt_deg
+    a_vals = zeros(degree+1) # kern's coefs in cheb poly basis
+    for i in 0:(degree)
+        a_vals[i+1] = dct(lkern, i, b, fkt_config.dct_n)
+    end
+    a_vals[1]/=2
+    guess_poly = ChebyshevT(a_vals)
+    max_err = 0
+    for i in 0:100
+        x = i/100.0
+        guess_val = guess_poly(x)
+        true_val = lkern(x*b)
+        max_err = max(max_err, abs(true_val-guess_val))
+    end
+    return max_err
+end
+
 
 
 # Table of coefficients for chebyshev polynomials
