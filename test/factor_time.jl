@@ -10,29 +10,35 @@ using LowRankApprox
 using Printf
 using Random
 
+GC.gc()
 r = Sym("r")
 
-rtol          = 1e-2
+d             = 3
+fkt_deg       = 10
+num_points    = 200_000
+
+spread_param  = 2 # 2 for unif, 6 for norm
 dct_n         = 100 # Iterations for discrete cosine transform
-d             = 4
 kern          = 1 / (1+r^2)
 lkern         = lambdify(kern)
 to            = TimerOutput()
-fkt_deg       = 8
 mat_kern(x,y) = 1 / (1+norm(x-y)^2)
 
-num_points    = 400000
-x_vecs        = [randn(d) / 6 for _ in 1:num_points]
+x_vecs        = [rand(d) / spread_param for _ in 1:num_points]
 # for idx in 1:length(x_vecs)
 #     x_vecs[idx][1] = abs(x_vecs[idx][1])
 #     x_vecs[idx][2:end] .= 0
 # end
 # y_vecs = [randn(d)./8 for _ in 1:num_points]
-max_norm  = maximum(norm.(x_vecs))
+
 # truth_mat  = mat_kern.(x_vecs, permutedims(x_vecs))
 # _, svals = svd(truth_mat);
 
-cfg = fkt_config(fkt_deg, d, 2max_norm, dct_n, to)
+rtol = 10.0^(-15)
+cfg = fkt_config(fkt_deg, d, dct_n, to, rtol)
+rtol = guess_fkt_err(lkern, x_vecs, cfg)
+cfg = fkt_config(fkt_deg, d, dct_n, to, rtol)
+
 
 
 # Perform FKTcheb
@@ -42,6 +48,9 @@ fkt_rank = size(U_mat, 2)
 # fkt_guess = (U_mat*V_mat)
 # fkt_err_2norm = norm(fkt_guess-truth_mat, 2)/svals[1]
 println("Rank ", fkt_rank)
+println("Rtol ", rtol)
+println("Num points ", num_points)
+println("Trunc param ", fkt_deg)
 # println("Err ",fkt_err_2norm)
 
 GC.gc()

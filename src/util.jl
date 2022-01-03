@@ -24,7 +24,7 @@ function guess_fkt_err(lkern, x_vecs, fkt_config)
         b=max(b, norm(x_vecs[i]))
     end
     b*=2
-    
+    println("Using interval [0,",b,"]")
     degree = fkt_config.fkt_deg
     a_vals = zeros(degree+1) # kern's coefs in cheb poly basis
     for i in 0:(degree)

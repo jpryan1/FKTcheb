@@ -7,78 +7,67 @@ using LinearAlgebra
 using LowRankApprox
 using Printf
 using Random
-
-# d=3
-# degree=10
-#
-# recentered_src = [randn(3) for i in 1:100]
-# normalizer_table = FKTcheb.squared_hyper_normalizer_table(d, degree)
-#
-# n = length(recentered_src)
-# rj_hyps = FKTcheb.cart2hyp.(recentered_src)
-# max_length_multi = FKTcheb.max_num_multiindices(d, degree)
-# hyp_harms = zeros(Complex{Float64}, n, max_length_multi) # pre-allocating
-# for k in 0:degree
-#     N_k_alpha = FKTcheb.gegenbauer_normalizer(d, k)
-# #
-#     multiindices =  FKTcheb.get_multiindices(d, k)
-#     hyp_harms_k = @view hyp_harms[:, 1:length(multiindices)]
-#     if d > 2
-#         hyp_harms_k .= FKTcheb.hyperspherical.(rj_hyps, k, permutedims(multiindices), Val(false)) # needs to be normalized
-#         hyp_harms_k ./= normalizer_table[k+1, 1:length(multiindices)]'
-#         # hyp_harms_k .= hyperspherical.(rj_hyps, k, permutedims(multiindices), Val(true)) # needs to be normalized
-#     elseif d == 2
-#         hyp_harms_k .= FKTcheb.hypospherical.(rj_hyps, k, permutedims(multiindices)) # needs to be normalized
-#     end
-#
-#     tmp =  N_k_alpha * transpose(conj(hyp_harms_k) )
-#
-# end
-#
-
-#
+using Plots
 
 r = Sym("r")
 
+fn_approx_plot = true
+
 dct_n         = 100 # Iterations for discrete cosine transform
 d             = 3
-
 kern          = 1 / (1+r^2)
 mat_kern(x,y) = 1 / (1+norm(x-y)^2)
-# kern          = exp(-abs(r))
-# mat_kern(x,y) = exp(-norm(x-y))
-# kern          = 1/(0.001+abs(r))
-# mat_kern(x,y) = 1/(0.001+norm(x-y))
-# kern          = (1+abs(r))*exp(-abs(r))
-# mat_kern(x,y) = (1+norm(x-y))*exp(-norm(x-y))
 lkern         = lambdify(kern)
+to            = TimerOutput()
+
+num_points = 1000
+println("\n\nN=",num_points)
+x_vecs = [randn(d) / 2 for _ in 1:num_points]
 
 
-to      = TimerOutput()
+truth_mat  = mat_kern.(x_vecs, permutedims(x_vecs))
+max_norm = max(maximum(norm.(x_vecs)), maximum(norm.(x_vecs)))
+println("Max norm: ",max_norm)
 
-fkt_deg = 6
-# num_points = 2000
-for num_points in 3000#[1_500 3_000 6_000]
-    println("\n\nN=",num_points)
-    x_vecs = [randn(d) / 8 for _ in 1:num_points]
-    # for idx in 1:length(x_vecs)
-    #     x_vecs[idx][1] = abs(x_vecs[idx][1])
-    #     x_vecs[idx][2:end] .= 0
-    # end
-    # y_vecs = [randn(d)./8 for _ in 1:num_points]
-    truth_mat  = mat_kern.(x_vecs, permutedims(x_vecs))
+rtol = 1e-16
+rs = []
+subset = rand(length(x_vecs),length(x_vecs))
+for (x_idx1, x_vec1) in enumerate(x_vecs)
+    for (x_idx2, x_vec2) in enumerate(x_vecs)
+        if subset[x_idx1,x_idx2] > 0.01
+            continue
+        end
+        if x_idx1 > x_idx2
+            continue
+        end
+        push!(rs, norm(x_vec1-x_vec2))
+    end
+end
 
-    max_norm = max(maximum(norm.(x_vecs)), maximum(norm.(x_vecs)))
-    println("Max norm ", max_norm)
-    cfg = fkt_config(fkt_deg, d, 2max_norm, dct_n, to)
-
-    # Perform FKTcheb
-    @timeit to string("FKT ",num_points) U_mat, V_mat = cheb_fkt(lkern, x_vecs, x_vecs,truth_mat, cfg)
-
-    # Get FKTcheb error
+xs = collect(0:0.1:maximum(rs))
+truths =lkern.(xs)
+p = plot(xs, truths, label="Truth")
+# fkt_deg = 6
+for fkt_deg in 12
+    cfg = fkt_config(fkt_deg, d, 2max_norm, dct_n, to, rtol)
+    U_mat, V_mat = degen_kern_harmonic(lkern, x_vecs, x_vecs, cfg)
     guess = U_mat*V_mat
-    error = norm(guess-truth_mat)/norm(truth_mat)
-    println("FKT Error: ", error)
+    ys = []
+    for (x_idx1, x_vec1) in enumerate(x_vecs)
+        for (x_idx2, x_vec2) in enumerate(x_vecs)
+            if subset[x_idx1,x_idx2] > 0.01
+                continue
+            end
+            if x_idx1 > x_idx2
+                continue
+            end
+            push!(ys, real(guess[x_idx1, x_idx2]))
+        end
+    end
+    p = scatter!(rs, ys, label=string(fkt_deg))
+end
+display(p)
+
 #
 #     fktid = idfact(guess, rtol = error)
 #     println("looks like rank ", length(fktid.sk))
@@ -107,21 +96,8 @@ for num_points in 3000#[1_500 3_000 6_000]
 #     iderr = norm(id_full_mat - truth_mat)/norm(truth_mat)
 #     idrnk = length(idf.sk)
 #     println("ID Error: ", iderr)
-#
-#     # Perform Nystrom with num points equal to rank seen in ID
-#     q_set = randperm(num_points)[1:idrnk]
-#     @timeit to string("Nystrom ", num_points) begin
-#         Nq =  mat_kern.(x_vecs, permutedims(x_vecs[q_set]))
-#         qmat = lu( mat_kern.(x_vecs[q_set], permutedims(x_vecs[q_set])))
-#     end
-#
-#     # Get error for Nystrom
-#     nystromguess = Nq * (qmat \ transpose(Nq))
-#     for i in 1:length(num_points)
-#         nystromguess[i,i] = truth_mat[i,i]
-#     end
-#     nystromerror = norm(nystromguess-truth_mat)/norm(truth_mat)
-#     println("Nystrom Error: ", nystromerror)
+
+
 #
 #     # Print various observed stats
 #     N = num_points
@@ -130,9 +106,8 @@ for num_points in 3000#[1_500 3_000 6_000]
 #     println("N=", N, ", R=",R, ", r*=", rnk_star, ", r=", idrnk)
 #     @printf("Factor:\n FKT:%10d\nFKT+:%10d\n  ID:%10d\n Nys:%10d\n", N*R, N*R*rnk_star, N*N*idrnk, N*idrnk)
 #     @printf("Apply:\n FKT:%10d\nFKT+:%10d\n  ID:%10d\n Nys:%10d\n", N*R, N*rnk_star, N*idrnk, N*idrnk)
-end
 
-println(to)
+# println(to)
 
 
 end # module rank_compare

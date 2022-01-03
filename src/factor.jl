@@ -179,27 +179,23 @@ function get_orthogonal_radials(d, b, degree)
         push!(polynomials, current)
     end
 
-    B = zeros(degree+1,degree+1)
-    for i in 1:(degree+1)
-        for j in 1:(degree+1)
-            B[i,j] = polynomials[i][j]
-        end
-    end
-    Binv = inv(B)
-    return polynomials, Binv
+    # B = zeros(degree+1,degree+1)
+    # for i in 1:(degree+1)
+    #     for j in 1:(degree+1)
+    #         B[i,j] = polynomials[i][j]
+    #     end
+    # end
+    # Binv = inv(B)
+    # return polynomials, Binv
+    return polynomials, Matrix(I, degree+1, degree+1)
 end
 
 
-function get_pole_map_trans_table(degree, d, b, a_vals, pij, Binv)
+function get_trans_table(degree, d, b, a_vals, pij, Binv)
     alpha = (d//2) - 1
-
     M = 2degree
-    pole_count_map = Dict()
-    pole_count = 0
-
     trans_table = Dict()
     for harmonic_deg in 0:convert(Int, degree/2) # TODO speed up this is so dumb
-        multiindex_length = length(get_multiindices(d, harmonic_deg))
         # for orth_poly_idx in 0:M
         for orth_poly_idx in 0:(degree-harmonic_deg)
             # for n in harmonic_deg:2:M
@@ -207,19 +203,10 @@ function get_pole_map_trans_table(degree, d, b, a_vals, pij, Binv)
                 trans_table[(harmonic_deg,orth_poly_idx,n)] = 0
             end
         end
-
-        for harmonic_ord in 1:multiindex_length
-            # for orth_poly_idx in 0:M
-            for orth_poly_idx in 0:(degree-harmonic_deg)
-                pole_count += 1
-                pole_count_map[(harmonic_deg,orth_poly_idx,harmonic_ord)] = pole_count
-            end
-        end
     end
 
     for harmonic_deg in 0:convert(Int, degree/2)
         gegnorm = gegenbauer_normalizer(d, harmonic_deg)
-        multiindex_length = length(get_multiindices(d, harmonic_deg))
         # for orth_poly_idx in 0:M
         for orth_poly_idx in 0:(degree-harmonic_deg)
             m0 = max(orth_poly_idx,harmonic_deg)
@@ -251,13 +238,14 @@ function get_pole_map_trans_table(degree, d, b, a_vals, pij, Binv)
             end
         end
     end
-    return pole_count_map, trans_table
+    return trans_table
 end
 
 function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_config)
     r = Sym("r")
 
     to     = fkt_config.to
+    @timeit to "centering" begin
     centroid = zeros(length(x_vecs[1]))
     for x_vec in x_vecs
         centroid .+= x_vec
@@ -269,6 +257,7 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
         b=max(b, norm(x_vecs[i]))
     end
     b*=2
+    end
     degree = fkt_config.fkt_deg
     pij    = get_pij_table(degree+1)
     d      = fkt_config.d
@@ -281,11 +270,9 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
     polynomials, Binv = get_orthogonal_radials(d, b, degree)
 
     M = 2degree
-    # @timeit to "cart2hyp" rj_hyps = cart2hyp.(x_vecs)
-    rj_hyps = cart2hyp.(x_vecs)
+    @timeit to "cart2hyp" rj_hyps = cart2hyp.(x_vecs)
 
-    normalizer_table = hyper_normalizer_table(d, convert(Int, degree/2))
-    @timeit to "trans table" pole_count_map, trans_table = get_pole_map_trans_table(degree, d, b, a_vals, pij, Binv)
+    @timeit to "trans table" trans_table = get_trans_table(degree, d, b, a_vals, pij, Binv)
     #TODO generate pij, binv, avals in function
     # TODO Speed this up
 
@@ -305,6 +292,7 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
     # end
 
     poly_mats = []
+    num_harmonic_orders_needed = 0
     for harmonic_deg in 0:convert(Int, degree/2)
         x_polys = Array{Array{Float64,1},1}(undef, degree-harmonic_deg+1)
         for orth_poly_idx in 0:(degree-harmonic_deg)
@@ -328,26 +316,28 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
         leftmat = pm_mul_mat(curr_qy,umid)
         for i in 1:length(smid)
             if (smid[i] / top_sing) < rtol
-                # println("size ", size(laq), " truncating out less than ", rtol," sings ",  smid[(i+1):end]/top_sing, " among ", smid/top_sing)
-
                 smid = smid[1:(i-1)]
                 leftmat = leftmat[1:(i-1)]
-                # smid = smid[1:(i)]
-                # leftmat = leftmat[1:(i)]
                 break
             end
         end
-        rank += length(smid)*length(get_multiindices(d, harmonic_deg))
+
+        if length(smid) == 0
+            num_harmonic_orders_needed = harmonic_deg-1
+            break
+        end
+
+        rank += length(smid)*get_num_multiindices(d, harmonic_deg)
         pm_mul = pm_mul_mat(leftmat, diagm(sqrt.(smid)))
         push!(poly_mats, pm_mul)
     end
     @timeit to "u alloc" U_mat = zeros( length(x_vecs),rank)
 
     cur_idx = 0
+    @timeit to "normalizer_table" normalizer_table = hyper_normalizer_table(d, num_harmonic_orders_needed)
 
     @timeit to "Second loop" begin
-
-    for harmonic_deg in 0:convert(Int, degree/2)
+    for harmonic_deg in 0:num_harmonic_orders_needed
         pm_mul = poly_mats[harmonic_deg+1]
         if length(pm_mul) == 0
             break
@@ -372,6 +362,7 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
                 end
             end
         end
+        # println("Cost ", pm_deg*length(pm_mul))
         @timeit to "pm2m rx" radial_x = poly_mat_to_mat(pm_mul, data_pows, pm_deg)
         @timeit to "populate umat " begin
         for harmonic_ord in 1:size(x_harmonics, 2)

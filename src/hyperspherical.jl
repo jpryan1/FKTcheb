@@ -5,8 +5,8 @@
 # k (i.e. λ) is order
 # h is multi-index
 function hyperspherical(x::AbstractVector, k::Int, h::AbstractVector{<:Int}, normalized::Val{true} = Val(true))
-    μ, m = get_μ_m(k, h)
-    hyperspherical(x, μ, m, Val(false)) / hyper_normalizer(μ)
+    μ = get_μ(k, h)
+    hyperspherical(x, get_μ(k, h), h[end], Val(false)) / hyper_normalizer(μ)
 end
 
 
@@ -41,11 +41,11 @@ end
 # helper for un-normalized polynomials
 # m is last element of multiindex
 # x is in hyper-spherical coordinates
-function hyperspherical(x::AbstractVector{<:Real}, μ::AbstractVector{Int}, m::Int, normalized::Val{false})
-    # r, θ, φ = unpack_hyperspherical(x) # unpacking hyper-spherical coordinates
-    # hyperspherical(r, θ, φ, μ, m, normalized)
-    hyperspherical(x, μ, m, normalized)
-end
+# function hyperspherical(x::AbstractVector{<:Real}, μ::AbstractVector{Int}, m::Int, normalized::Val{false})
+#     # r, θ, φ = unpack_hyperspherical(x) # unpacking hyper-spherical coordinates
+#     # hyperspherical(r, θ, φ, μ, m, normalized)
+#     hyperspherical(x, μ, m, normalized)
+# end
 #
 # function hyperspherical(r::Real, θ::AbstractVector{<:Real}, φ::Real,
 #                         μ::AbstractVector{Int}, m::Int, normalized::Val{false})
@@ -151,6 +151,11 @@ end
 
 ################################ multi-indices #################################
 # functions regarding multi-indices
+function get_num_multiindices(d::Int, k::Int)
+    return binomial(d+k-1, k) - binomial(d+k-3, k-2)
+end
+
+
 function get_multiindices(d::Int, k::Int)
     if d == 2 return [@MVector([i]) for i in 0 : (k == 0 ? 0 : 1)] end
     current_index = @MVector zeros(Int, d-2) # mutable static array

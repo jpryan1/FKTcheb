@@ -31,8 +31,7 @@ mat_kern(x,y) = 1 / (1+norm(x-y)^2)
     to        = TimerOutput()
     x_vecs    = [randn(d) / 8 for _ in 1:num_points]
     truth_mat = mat_kern.(x_vecs, permutedims(x_vecs))
-    max_norm  = max(maximum(norm.(x_vecs)), maximum(norm.(x_vecs)))
-    cfg = fkt_config(fkt_deg, d, 2max_norm, dct_n, to, rtol)
+    cfg = fkt_config(fkt_deg, d, dct_n, to, rtol)
 
     # Perform FKTcheb
     U_mat = degen_kern_harmonic(lkern, x_vecs, cfg)
@@ -49,8 +48,7 @@ end
     to        = TimerOutput()
     x_vecs    = [randn(d) / 8 for _ in 1:num_points]
     truth_mat = mat_kern.(x_vecs, permutedims(x_vecs))
-    max_norm  = max(maximum(norm.(x_vecs)), maximum(norm.(x_vecs)))
-    cfg = fkt_config(fkt_deg, d, 2max_norm, dct_n, to, rtol)
+    cfg = fkt_config(fkt_deg, d, dct_n, to, rtol)
 
     # Perform FKTcheb
     U_mat = degen_kern_harmonic(lkern, x_vecs, cfg)
@@ -68,8 +66,7 @@ end
     to        = TimerOutput()
     x_vecs    = [randn(d) / 8 for _ in 1:num_points]
     truth_mat = mat_kern.(x_vecs, permutedims(x_vecs))
-    max_norm  = max(maximum(norm.(x_vecs)), maximum(norm.(x_vecs)))
-    cfg = fkt_config(fkt_deg, d, 2max_norm, dct_n, to, rtol)
+    cfg = fkt_config(fkt_deg, d, dct_n, to, rtol)
 
     # Perform FKTcheb
     U_mat = degen_kern_harmonic(lkern, x_vecs, cfg)
