@@ -164,7 +164,7 @@ end
 
 
 function get_orthogonal_radials(d, b, degree)
-    r = Sym("r")
+    # r = Sym("r")
 
     weight = zeros(2*(degree+d+1))
     weight[1] = 1
@@ -242,8 +242,6 @@ function get_trans_table(degree, d, b, a_vals, pij, Binv)
 end
 
 function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_config)
-    r = Sym("r")
-
     to     = fkt_config.to
     @timeit to "centering" begin
     centroid = zeros(length(x_vecs[1]))
@@ -282,6 +280,9 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
     @timeit to "x data " x_data = [norm(x_vec) for x_vec in x_vecs]
     @timeit to "x data pows" data_pows = [x_data .^ (i-1) for i in 1:2*(degree+d+1)]
     @timeit to "x data sums" x_data_pow_sums = [sum(data_pows[i]) for i in 1:length(data_pows)]
+
+    @timeit to "powers_of_norms" powers, data_pows_2, x_data_pow_sums_2 = powers_of_norms(x_vecs, 2*(degree+d+1))
+    # println("data_pows_2", all())
 
     y_polys = polynomials[1:(degree+1)]
     radial_y = y_polys
@@ -345,13 +346,16 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
 
         mis = get_multiindices(d, harmonic_deg)
         @timeit to "get harmonics" begin
-        x_harmonics = zeros(length(x_vecs),length(mis))
-        if d > 2
-            x_harmonics .= hyperspherical.(rj_hyps, harmonic_deg, permutedims(mis), Val(false))
-            x_harmonics .= (x_harmonics ./ normalizer_table[harmonic_deg+1, 1:size(x_harmonics,2)]')
-        elseif d == 2
-            x_harmonics .= hypospherical.(rj_hyps, harmonic_deg, permutedims(mis))
-        end
+            x_harmonics = zeros(length(x_vecs),length(mis))
+            if d > 2
+                x_harmonics .= hyperspherical.(rj_hyps, harmonic_deg, permutedims(mis), Val(false))
+                # for (mis_i, h) in enumerate(mis)
+                #     x_harmonics[:, mis_i] .= hyperspherical(rj_hyps, harmonic_deg, h, Val(false))
+                # end
+                x_harmonics .= (x_harmonics ./ normalizer_table[harmonic_deg+1, 1:size(x_harmonics,2)]')
+            elseif d == 2
+                x_harmonics .= hypospherical.(rj_hyps, harmonic_deg, permutedims(mis))
+            end
         end
 
         pm_deg = 0
@@ -379,4 +383,23 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
     end
     end
     return U_mat[:, 1:cur_idx]
+end
+
+# returns
+# 1) n by max_pow matrix of powers of norms of datapoints in x up to the (max_pow-1)th power
+# 2) vector of columns of previous matrix
+# 3) "Euler sum"
+function powers_of_norms(x::AbstractVector{<:AbstractVector}, max_pow::Int)
+    n = length(x)
+    powers = ones(eltype(x[1]), n, max_pow)
+    norms = [norm(xi) for xi in x]
+    for j in 2:max_pow
+        @inbounds @simd for i in 1:n
+            powers[i, j] = norms[i]
+            norms[i] *= norms[i]
+        end
+    end
+    power_sums = vec(sum(powers, dims = 1))
+    powers_as_vec = [col for col in eachcol(powers)]
+    return powers, powers_as_vec, power_sums
 end

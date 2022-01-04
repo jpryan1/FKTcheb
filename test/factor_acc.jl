@@ -3,21 +3,19 @@ module FactorTest
 using Test
 
 using FKTcheb
-using SymPy
 using TimerOutputs
 using LinearAlgebra
 using LowRankApprox
 using Printf
 using Random
 
-r = Sym("r")
 
 rtol          = 1e-3
 num_points    = 1000
 
 dct_n         = 100 # Iterations for discrete cosine transform
-kern          = 1 / (1+r^2)
-lkern         = lambdify(kern)
+lkern(r)          = 1 / (1+r^2)
+# lkern(r)         = lambdify(kern)
 mat_kern(x,y) = 1 / (1+norm(x-y)^2)
 
 # for idx in 1:length(x_vecs)

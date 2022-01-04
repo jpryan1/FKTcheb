@@ -3,7 +3,7 @@ module FactorTime
 using Test
 
 using FKTcheb
-using SymPy
+# using SymPy
 using TimerOutputs
 using LinearAlgebra
 using LowRankApprox
@@ -11,7 +11,7 @@ using Printf
 using Random
 
 GC.gc()
-r = Sym("r")
+# r = Sym("r")
 
 d             = 3
 fkt_deg       = 10
@@ -19,10 +19,10 @@ num_points    = 200_000
 
 spread_param  = 2 # 2 for unif, 6 for norm
 dct_n         = 100 # Iterations for discrete cosine transform
-kern          = 1 / (1+r^2)
-lkern         = lambdify(kern)
+lkern(r)         = 1 / (1+r^2)
+# lkern         = lambdify(kern)
 to            = TimerOutput()
-mat_kern(x,y) = 1 / (1+norm(x-y)^2)
+mat_kern(x,y) = lkern(norm(x-y)) # IDEA: replace x-y with something lazy
 
 x_vecs        = [rand(d) / spread_param for _ in 1:num_points]
 # for idx in 1:length(x_vecs)

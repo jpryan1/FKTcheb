@@ -1,6 +1,6 @@
 module FKTcheb
 
-using SymPy
+# using SymPy
 using LinearAlgebra
 using Combinatorics
 using TimerOutputs

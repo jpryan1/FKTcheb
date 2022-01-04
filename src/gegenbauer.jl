@@ -15,6 +15,25 @@ end
     return C2
 end
 
+# for full performance, important to pass α as a float too
+@inline function gegenbauer(α::T, n::Int, x::AbstractVector{T}) where {T <: Real}
+    C1 = ones(eltype(x), length(x)) # allocates IDEA: pre-allocate C1, and C2 in hyperspherical
+    n == 0 && return C1
+    C2 = zero(x) # allocates
+    gegenbauer!(C1, C2, α, n, x)
+end
+
+@inline function gegenbauer!(C1, C2, α::T, n::Int, x::AbstractVector{T}) where {T <: Real}
+    @. C1 = 1
+    @. C2 = 2α*x
+    for k in 2:n
+        @inbounds @simd for i in 1:length(x)
+            @fastmath C1[i], C2[i] = C2[i], (2*x[i]*(k+α-1) * C2[i] - (k+2α-2) * C1[i]) / k
+        end
+    end
+    return C2
+end
+
 function gegenbauer_normalizer(d::Int, n::Int)
     N_k_alpha = 1
     if d > 2
