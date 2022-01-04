@@ -65,7 +65,6 @@ function poly_col_dot(poly1::Array{Float64, 1},
     return tot
 end
 
-
 function qr_poly_mat(pm::Array{Array{Float64, 1}, 1}, data_pow_sums::Array{Float64, 1}) # TODO check acc of this
     r_mat = zeros(length(pm), length(pm))
     new_polys = [copy(pm[i]) for i in 1:length(pm)]
@@ -119,7 +118,6 @@ function pm_mul_mat(pm::Array{Array{Float64, 1}, 1}, mat::Array{Float64, 2})
     return new_polys
 end
 
-
 function pm_mul_pm(pm1::Array{Array{Float64, 1}, 1}, pm2::Array{Array{Float64, 1}, 1}, data_pow_sums::Array{Float64, 1})
     out = zeros(length(pm1), length(pm2))
     for i in 1:size(out,1)
@@ -163,76 +161,36 @@ function A(j::Int, k::Int, alpha::Real)
 end
 
 
-function get_orthogonal_radials(d, b, degree)
-    r = Sym("r")
-
-    weight = zeros(2*(degree+d+1))
-    weight[1] = 1
-
-    first_poly = zeros(2*(degree+d+1))
-    first_poly[1] = 1
-    polynomials = [first_poly]
-
-    for i in 2:(degree+1)
-        current = zeros(2*(degree+d+1))
-        current[i] = 1
-        push!(polynomials, current)
-    end
-
-    # B = zeros(degree+1,degree+1)
-    # for i in 1:(degree+1)
-    #     for j in 1:(degree+1)
-    #         B[i,j] = polynomials[i][j]
-    #     end
-    # end
-    # Binv = inv(B)
-    # return polynomials, Binv
-    return polynomials, Matrix(I, degree+1, degree+1)
-end
-
-
-function get_trans_table(degree, d, b, a_vals, pij, Binv)
+function get_trans_table(degree, d, b, a_vals, pij)
     alpha = (d//2) - 1
     M = 2degree
     trans_table = Dict()
     for harmonic_deg in 0:convert(Int, degree/2) # TODO speed up this is so dumb
-        # for orth_poly_idx in 0:M
-        for orth_poly_idx in 0:(degree-harmonic_deg)
-            # for n in harmonic_deg:2:M
-            for n in harmonic_deg:2:(degree-max(orth_poly_idx,harmonic_deg))
-                trans_table[(harmonic_deg,orth_poly_idx,n)] = 0
+        for m in harmonic_deg:2:(degree-harmonic_deg)
+            for n in harmonic_deg:2:(degree-m)
+                trans_table[(harmonic_deg,m,n)] = 0
             end
         end
     end
 
     for harmonic_deg in 0:convert(Int, degree/2)
         gegnorm = gegenbauer_normalizer(d, harmonic_deg)
-        # for orth_poly_idx in 0:M
-        for orth_poly_idx in 0:(degree-harmonic_deg)
-            m0 = max(orth_poly_idx,harmonic_deg)
-            if mod(m0+degree-harmonic_deg,2) != 0
-                m0+=1
-            end
-            # for n in harmonic_deg:2:M
-            for n in harmonic_deg:2:(degree-m0)
-                # for m in m0:2:M
-                for m in m0:2:(degree-n)
-                    for i in (n+m):2:degree
-                        for k3 in harmonic_deg:min(convert(Int, degree/2), min(min(n,m), degree-m))
-                            if mod(k3+m, 2) != 0 || mod(k3+n,2) != 0
-                                continue
-                            end
-                            trans_table[(harmonic_deg,orth_poly_idx,n)] += (
-                                    Binv[m+1, orth_poly_idx+1]
-                                    * a_vals[i+1]
-                                    * gegnorm
-                                    * pij[i+1, n+m+1]
-                                    * (1-delta(0,i)/2)
-                                    * A(harmonic_deg,k3, alpha)
-                                    * (-2)^k3
-                                    * ((1.0/b)^(n+m))
-                                    * multinomial([convert(Int,(n-k3)/2),convert(Int,(m-k3)/2),convert(Int,k3)]...) )
+        for m in harmonic_deg:2:(degree-harmonic_deg)
+            for n in harmonic_deg:2:(degree-m)
+                for i in (n+m):2:degree
+                    for k3 in harmonic_deg:min(convert(Int, degree/2), min(min(n,m), degree-m))
+                        if mod(k3+m, 2) != 0 || mod(k3+n,2) != 0
+                            continue
                         end
+                        trans_table[(harmonic_deg,m,n)] += (
+                                a_vals[i+1]
+                                * gegnorm
+                                * pij[i+1, n+m+1]
+                                * (1-delta(0,i)/2)
+                                * A(harmonic_deg, k3, alpha)
+                                * (-2)^k3
+                                * ((1.0/b)^(n+m))
+                                * multinomial([convert(Int,(n-k3)/2),convert(Int,(m-k3)/2),convert(Int,k3)]...) )
                     end
                 end
             end
@@ -242,21 +200,13 @@ function get_trans_table(degree, d, b, a_vals, pij, Binv)
 end
 
 function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_config)
-    r = Sym("r")
-
     to     = fkt_config.to
     @timeit to "centering" begin
-    centroid = zeros(length(x_vecs[1]))
-    for x_vec in x_vecs
-        centroid .+= x_vec
-    end
-    centroid ./= length(x_vecs)
-    b=0
+    centroid = sum(x_vecs)/length(x_vecs)
     for i in 1:length(x_vecs)
         x_vecs[i] -= centroid
-        b=max(b, norm(x_vecs[i]))
     end
-    b*=2
+    b = 2maximum(norm.(x_vecs))
     end
     degree = fkt_config.fkt_deg
     pij    = get_pij_table(degree+1)
@@ -267,14 +217,11 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
         a_vals[i+1] = dct(lkern, i, b, fkt_config.dct_n)
     end
 
-    polynomials, Binv = get_orthogonal_radials(d, b, degree)
-
     M = 2degree
     @timeit to "cart2hyp" rj_hyps = cart2hyp.(x_vecs)
 
-    @timeit to "trans table" trans_table = get_trans_table(degree, d, b, a_vals, pij, Binv)
-    #TODO generate pij, binv, avals in function
-    # TODO Speed this up
+    @timeit to "trans table" trans_table = get_trans_table(degree, d, b, a_vals, pij)
+
 
     radial_mats = []
     top_sing = -1
@@ -283,30 +230,42 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
     @timeit to "x data pows" data_pows = [x_data .^ (i-1) for i in 1:2*(degree+d+1)]
     @timeit to "x data sums" x_data_pow_sums = [sum(data_pows[i]) for i in 1:length(data_pows)]
 
-    y_polys = polynomials[1:(degree+1)]
-    radial_y = y_polys
+    radial_y = [zeros(2*(degree+d+1)) for i in 1:(degree+1)]
+    for i in 1:(degree+1)
+        radial_y[i][i]=1
+    end
+
     @timeit to "y qr" qy, ly = qr_poly_mat(radial_y, x_data_pow_sums)
     # guess=poly_mat_to_mat(pm_mul_mat(qy,  ly), data_pows, length(data_pows))
     # if norm(guess-poly_mat_to_mat(radial_y, data_pows, length(data_pows)),2)/norm(poly_mat_to_mat(radial_y, data_pows, length(data_pows)),2) > 1e-5
     #     println("\n\nBIG QR ERR\n\n")
     # end
-
+    @timeit to "stage 1" begin
     poly_mats = []
     num_harmonic_orders_needed = 0
     for harmonic_deg in 0:convert(Int, degree/2)
-        x_polys = Array{Array{Float64,1},1}(undef, degree-harmonic_deg+1)
-        for orth_poly_idx in 0:(degree-harmonic_deg)
+        polynum = convert(Int64, 1+(degree-2harmonic_deg)/2)
+        x_polys = Array{Array{Float64,1},1}(undef, polynum)
+        y_polys = Array{Array{Float64,1},1}(undef, polynum)
+
+        for m in harmonic_deg:2:(degree-harmonic_deg)
             cur_poly = zeros(2*(degree+d+1))
-            for n in harmonic_deg:2:(degree-max(orth_poly_idx,harmonic_deg))
-                cur_poly[n+1] = trans_table[(harmonic_deg,orth_poly_idx,n)]
+            for n in harmonic_deg:2:(degree-m)
+                cur_poly[n+1] = trans_table[(harmonic_deg,m,n)]
             end
-            x_polys[orth_poly_idx+1] = cur_poly
+            poly_idx = convert(Int64,1+(m-harmonic_deg)/2)
+            x_polys[poly_idx] = cur_poly
+
+            y_poly = zeros(2*(degree+d+1)) #TODO check that this high degree is needed everywhere
+            y_poly[m+1] = 1
+            y_polys[poly_idx] = y_poly
         end
 
         radial_x = x_polys
         lq_rank = min(degree-harmonic_deg+1, length(qy))
-        curr_qy = qy[1:lq_rank]
-        curr_ly = ly[1:lq_rank, 1:(degree-harmonic_deg+1)]
+        curr_rad_y = y_polys
+        curr_qy, curr_ly = qr_poly_mat(curr_rad_y, x_data_pow_sums) # IDEA move out of loop for speed
+
         laq = curr_ly * pm_mul_pm(radial_x, curr_qy, x_data_pow_sums)
         umid, smid, vmid = svd(laq)
         if harmonic_deg == 0
@@ -331,6 +290,7 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
         pm_mul = pm_mul_mat(leftmat, diagm(sqrt.(smid)))
         push!(poly_mats, pm_mul)
     end
+end
     @timeit to "u alloc" U_mat = zeros( length(x_vecs),rank)
 
     cur_idx = 0
@@ -347,7 +307,7 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
         @timeit to "get harmonics" begin
         x_harmonics = zeros(length(x_vecs),length(mis))
         if d > 2
-            x_harmonics .= hyperspherical.(rj_hyps, harmonic_deg, permutedims(mis), Val(false))
+                x_harmonics .= hyperspherical.(rj_hyps, harmonic_deg, permutedims(mis), Val(false))
             x_harmonics .= (x_harmonics ./ normalizer_table[harmonic_deg+1, 1:size(x_harmonics,2)]')
         elseif d == 2
             x_harmonics .= hypospherical.(rj_hyps, harmonic_deg, permutedims(mis))
@@ -366,11 +326,11 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
         @timeit to "pm2m rx" radial_x = poly_mat_to_mat(pm_mul, data_pows, pm_deg)
         @timeit to "populate umat " begin
         for harmonic_ord in 1:size(x_harmonics, 2)
-            for orth_poly_idx in 0:(size(radial_x,2)-1)
+            for m in 0:(size(radial_x,2)-1)
                 cur_idx += 1
                 for (x_idx, x_vec) in enumerate(x_vecs)
                     U_mat[x_idx, cur_idx] = (
-                        radial_x[x_idx, orth_poly_idx+1]
+                        radial_x[x_idx, m+1]
                         * x_harmonics[x_idx, harmonic_ord])
                 end
             end
