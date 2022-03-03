@@ -1,6 +1,138 @@
 # Poly will be vec of length 2p
 # multiply will double check at first to make sure nothing bad happens
 
+
+
+function normalized_leg(legpoly,x)
+    tot = 0
+    for i in 1:length(legpoly)
+        # leg = zeros(i)
+        # leg[i] = 1
+        # legpol =Legendre(leg)
+        # tot += legpol(x)*sqrt(2(i-1)+1)*legpoly[i]
+        tot += x^(i-1)*legpoly[i]
+    end
+    return tot
+end
+
+
+function poly_qr(polys, x_vec_norms, data_pows, degree)
+    k_to_data_pow_sums = Dict()
+    k_to_data_pows = Dict()
+    for k in 1:length(polys)
+        x_vec_norms_k = x_vec_norms[k:end]
+        data_pows_k = Array{Array{Float64,1}, 1}()
+        for i in 1:(3degree)
+            # leg = zeros(i)
+            # leg[i] = 1
+            # legpol = Legendre(leg)
+            # push!(data_pows_k, sqrt(2(i-1)+1)*legpol.(2x_vec_norms_k .- 1))
+            # push!(data_pows_k, legpol.(2x_vec_norms_k .- 1))
+            push!(data_pows_k, x_vec_norms_k.^(i-1))
+            #NORMALIZATION
+        end
+        data_pow_sums_k = [sum(data_pows_k[i]) for i in 1:length(data_pows_k)]
+        k_to_data_pow_sums[k] = data_pow_sums_k
+    end
+    # R = zeros(length(polys), length(polys))
+    R = zeros(length(x_vec_norms), length(polys))
+    vs = []
+    perm = [i for i in 1:length(polys)]
+    for k in 1:(length(polys))
+        max_norm_index = k
+        x_poly = polys[k]
+        # println("Norm poly ", x_poly)
+        max_norm = sqrt(max(0,poly_col_dot(x_poly,x_poly,k_to_data_pow_sums[k])))
+        # for kp in (k+1):length(polys)
+        #     xp_poly = polys[kp]
+        #     #TODO DELETE COMPLEX
+        #     kpn = sqrt(max(0,poly_col_dot(xp_poly,xp_poly,k_to_data_pow_sums[k])))
+        #     if kpn > max_norm
+        #         max_norm = kpn
+        #         max_norm_index = kp
+        #     end
+        # end
+        #
+        # if max_norm < 1e-6
+        #     return vs, R[1:(k-1), perm]
+        # end
+        xn = max_norm
+        # println(xn)
+        cpy = copy(polys[max_norm_index])
+        polys[max_norm_index] = copy(polys[k])
+        polys[k] = cpy
+        x_poly = polys[k]
+        perm[k] = max_norm_index
+        perm[max_norm_index] = k
+        # println("Guess norm ", xn)
+        vk = poly_mat_to_mat([x_poly],  data_pows,  length(data_pows))[k:end, 1]
+        # println("True norm ", norm(vk))
+        # xn=norm(vk)
+
+        # x1 = Legendre(x_poly)(2x_vec_norms[k]-1)
+        # x1 = normalized_leg(x_poly,2x_vec_norms[k][1]-1)
+        x1 = normalized_leg(x_poly,x_vec_norms[k][1])
+        #NORMALIZATION
+
+        sn = sign(x1)
+        alpha = sn*xn
+        vkn = sqrt(xn^2 + alpha^2 + 2alpha*x1)
+
+
+        vk[1] += alpha
+        push!(vs, vk/vkn)
+
+        tvec = zeros(length(polys)-k)
+        for i in (k+1):length(polys)
+            truth = dot(poly_mat_to_mat([x_poly],  data_pows,  length(data_pows))[k:end, 1],
+                        poly_mat_to_mat([polys[i]],  data_pows,  length(data_pows))[k:end, 1])
+
+            tvec[i-k] = poly_col_dot(x_poly, polys[i], k_to_data_pow_sums[k])
+            # tvec[i-k]=truth
+            # println("col dot guess ", tvec[i-k], " truth ", truth)
+        end
+
+        #NORMALIZATION
+        # row_vec = [Legendre(p)(2x_vec_norms[k][1]-1) for p in polys[(k+1):end]]
+        # row_vec = [normalized_leg(p,2x_vec_norms[k][1]-1) for p in polys[(k+1):end]]
+        row_vec = [normalized_leg(p,x_vec_norms[k][1]) for p in polys[(k+1):end]]
+
+
+        right_mat = transpose(tvec)/vkn^2 + ((alpha*transpose(row_vec))/(vkn^2))
+
+        R[k,k] = -sn*xn
+        # println(R[k,k])
+        R[k, (k+1):end] .= row_vec .- transpose(2*(x1+alpha)*right_mat)
+
+        for j in (k+1):length(polys)
+            polys[j] .-= 2*right_mat[1, j-k]*polys[k]
+        end
+    end
+    # println("*********")
+    return vs, R[:, perm]
+end
+
+
+
+function q_poly_mul(vs, B)
+    C = copy(B)
+    for k in (length(vs)):-1:1
+        C[k:end, :] -= 2*(vs[k]*(transpose(vs[k])*C[k:end,:]))
+    end
+    return C
+end
+
+function qtrans_poly_mul(vs, B)
+    C = copy(B)
+    for k in 1:length(vs)
+        C[k:end, :] -= 2*(vs[k]*(transpose(vs[k])*C[k:end,:]))
+    end
+    return C
+end
+
+
+
+
 function multiply_polys(a::Array{Float64, 1}, b::Array{Float64, 1})
     ans = zeros(length(a))
     adeg = 0
@@ -199,22 +331,28 @@ function get_trans_table(degree, d, b, a_vals, pij)
     return trans_table
 end
 
-function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_config)
-    to     = fkt_config.to
-    @timeit to "centering" begin
-    centroid = sum(x_vecs)/length(x_vecs)
+function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, rtol, to)
+    DCT_N = 100
+
+    @timeit to "centering1" centroid = sum(x_vecs)/length(x_vecs)
+
+    @timeit to "centering2" begin
     for i in 1:length(x_vecs)
-        x_vecs[i] -= centroid
+        x_vecs[i] .-= centroid
     end
-    b = 2maximum(norm.(x_vecs))
-    end
-    degree = fkt_config.fkt_deg
+end
+
+    # for i in 1:length(x_vecs)
+    #     x_vecs[i] -= centroid
+    # end
+    @timeit to "centering3" b = 2maximum(norm.(x_vecs))
+
+    @timeit to "guess fkt error " degree = guess_fkt_err(lkern, b,  DCT_N, rtol)
     pij    = get_pij_table(degree+1)
-    d      = fkt_config.d
-    rtol      = fkt_config.rtol
+    d      = length(x_vecs[1])
     a_vals = zeros(degree+1) # kern's coefs in cheb poly basis
     for i in 0:(degree)
-        a_vals[i+1] = dct(lkern, i, b, fkt_config.dct_n)
+        a_vals[i+1] = dct(lkern, i, b, DCT_N)
     end
 
     M = 2degree
@@ -262,21 +400,30 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
         end
 
         radial_x = x_polys
-        lq_rank = min(degree-harmonic_deg+1, length(qy))
-        curr_rad_y = y_polys
-        curr_qy, curr_ly = qr_poly_mat(curr_rad_y, x_data_pow_sums) # IDEA move out of loop for speed
+        rpx = poly_mat_to_mat(radial_x, data_pows, length(data_pows))
 
-        laq = curr_ly * pm_mul_pm(radial_x, curr_qy, x_data_pow_sums)
+        curr_rad_y = y_polys
+        # curr_qy, curr_ly = qr_poly_mat(curr_rad_y, x_data_pow_sums) # IDEA move out of loop for speed
+        curr_qy, curr_ly = poly_qr(y_polys, x_data, data_pows, degree)
+
+        laq = curr_ly *transpose(qtrans_poly_mul(curr_qy, rpx))
+        # laq = curr_ly * pm_mul_pm(radial_x, curr_qy, x_data_pow_sums)
+
         umid, smid, vmid = svd(laq)
         if harmonic_deg == 0
             top_sing = smid[1]
             # println("Setting top sing to ", smid[1])
         end
-        leftmat = pm_mul_mat(curr_qy,umid)
+
+        leftmat = zeros(length(x_data), size(umid,2))
+        leftmat[1:size(umid,1), 1:size(umid,2)] .= umid
+        leftmat = q_poly_mul(curr_qy, leftmat)
+
+        # leftmat = pm_mul_mat(curr_qy,umid)
         for i in 1:length(smid)
             if (smid[i] / top_sing) < rtol
                 smid = smid[1:(i-1)]
-                leftmat = leftmat[1:(i-1)]
+                leftmat = leftmat[:, 1:(i-1)]
                 break
             end
         end
@@ -287,8 +434,8 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, fkt_confi
         end
 
         rank += length(smid)*get_num_multiindices(d, harmonic_deg)
-        pm_mul = pm_mul_mat(leftmat, diagm(sqrt.(smid)))
-        push!(poly_mats, pm_mul)
+        # pm_mul = pm_mul_mat(leftmat, diagm(sqrt.(smid)))
+        push!(poly_mats, leftmat*diagm(sqrt.(smid)))
     end
 end
     @timeit to "u alloc" U_mat = zeros( length(x_vecs),rank)
@@ -323,7 +470,8 @@ end
             end
         end
         # println("Cost ", pm_deg*length(pm_mul))
-        @timeit to "pm2m rx" radial_x = poly_mat_to_mat(pm_mul, data_pows, pm_deg)
+        # @timeit to "pm2m rx" radial_x = poly_mat_to_mat(pm_mul, data_pows, pm_deg)
+        @timeit to "pm2m rx" radial_x = pm_mul
         @timeit to "populate umat " begin
         for harmonic_ord in 1:size(x_harmonics, 2)
             for m in 0:(size(radial_x,2)-1)

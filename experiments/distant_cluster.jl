@@ -12,21 +12,25 @@ using Distributions
 
 r = Sym("r")
 
-spread_param = 6
 num_points = 1000
 
 dct_n         = 100 # Iterations for discrete cosine transform
-d             = 15
-kern          = 1 / (1+r^2)
-mat_kern(x,y) = 1 / (1+norm(x-y)^2)
-lkern         = lambdify(kern)
+d             = 3
+σ = 5
+lkern(r)      = 1/(1+(σ*r)^2)
+# lkern(r)      = 1/(1+r^4)
+mat_kern(x,y) = lkern(norm(x-y))
 to            = TimerOutput()
 
-dist_name = "normal"
+x_vecs    = [randn(d) for _ in 1:num_points]
+mn = maximum(norm.(x_vecs))
+for i in 1:length(x_vecs)
+    x_vecs[i] /= (mn)
+end
+
 
 # dist = Normal(0,1)
 # x_vecs = [rand(dist,d) / spread_param for _ in 1:num_points]
-x_vecs = [rand(d) / spread_param for _ in 1:num_points]
 #TODO Pareto fails for uniform dist
 
 # for i in 1:num_points
@@ -46,48 +50,45 @@ svecs, svals = svd(truth_mat);
 fkt_ranks = []
 fkt_errs = []
 
-for tolpow in 1:2:7
-
-    new_fkt_ranks = []
-    new_fkt_errs = []
-    for fkt_deg in 2:2:10
-        println("FKT test: ",tolpow, " ", fkt_deg)
-        rtol = 10.0^(-tolpow)
-
-        cfg = fkt_config(fkt_deg, d, dct_n, to, rtol)
-        U_mat = degen_kern_harmonic(lkern, x_vecs, cfg)
-        # println("U_mat size ", size(U_mat))
-        V_mat = transpose(U_mat)
-        fkt_rank = size(V_mat, 1)
-        if fkt_rank > 100
-            break
-        end
-        fkt_guess = U_mat*V_mat
-        # _, fkterrorsvals = svd(fkt_guess-truth_mat)
-        # println("Rel err ",fkt_err_2norm/svals[1])
-        push!(new_fkt_ranks, fkt_rank)
-        # push!(new_fkt_errs, fkterrorsvals[1]/svals[1])
-        push!(new_fkt_errs, norm(fkt_guess-truth_mat, 2)/svals[1])
-    end
-    push!(fkt_ranks, new_fkt_ranks)
-    push!(fkt_errs, new_fkt_errs)
-end
+# for tolpow in 1:2:5
+#
+#     new_fkt_ranks = []
+#     new_fkt_errs = []
+#     for fkt_deg in 2:2:10
+#         println("FKT test: ",tolpow, " ", fkt_deg)
+#         rtol = 10.0^(-tolpow)
+#
+#         U_mat = degen_kern_harmonic(lkern, x_vecs, rtol,to)
+#         # println("U_mat size ", size(U_mat))
+#         V_mat = transpose(U_mat)
+#         fkt_rank = size(V_mat, 1)
+#         if fkt_rank > 100
+#             break
+#         end
+#         fkt_guess = U_mat*V_mat
+#         # _, fkterrorsvals = svd(fkt_guess-truth_mat)
+#         # println("Rel err ",fkt_err_2norm/svals[1])
+#         push!(new_fkt_ranks, fkt_rank)
+#         # push!(new_fkt_errs, fkterrorsvals[1]/svals[1])
+#         push!(new_fkt_errs, norm(fkt_guess-truth_mat, 2)/svals[1])
+#     end
+#     push!(fkt_ranks, new_fkt_ranks)
+#     push!(fkt_errs, new_fkt_errs)
+# end
 
 
 # PARETO CURVE
 new_fkt_ranks = []
 new_fkt_errs = []
-for fkt_deg in 2:2:10
-    rtol = 10.0^(-15)
-    cfg = fkt_config(fkt_deg, d, dct_n, to, rtol)
-    rtol = guess_fkt_err(lkern, x_vecs, cfg)
-    cfg = fkt_config(fkt_deg, d, dct_n, to, rtol)
-    U_mat = degen_kern_harmonic(lkern, x_vecs, cfg)
+for rtol_pow in 0:6
+    rtol = (1e-3)*(2.0^rtol_pow)
+
+    U_mat = degen_kern_harmonic(lkern, x_vecs, rtol,to)
     V_mat = transpose(U_mat)
     fkt_rank = size(V_mat, 1)
-    if fkt_rank > 100
-        break
-    end
+    # if fkt_rank > 100
+    #     break
+    # end
     fkt_guess = U_mat*V_mat
     # _, fkterrorsvals = svd(fkt_guess-truth_mat)
     fkt_err_2norm = norm(fkt_guess-truth_mat, 2)
@@ -95,7 +96,7 @@ for fkt_deg in 2:2:10
     # push!(new_fkt_errs, fkterrorsvals[1]/svals[1])
     push!(new_fkt_errs, fkt_err_2norm/svals[1])
     # push!(new_fkt_errs, rtol)
-    println("Pareto ", fkt_deg, " err: ", fkt_err_2norm/svals[1], " rank ", fkt_rank, " RTOL: ", rtol)
+    # println("Pareto ", fkt_deg, " err: ", fkt_err_2norm/svals[1], " rank ", fkt_rank, " RTOL: ", rtol)
 end
 push!(fkt_ranks, new_fkt_ranks)
 push!(fkt_errs, new_fkt_errs)
@@ -127,9 +128,11 @@ end
 pows = [1, 3, 5, 7, "Adaptive"]
 p = plot(1:100, svals[2:101]/svals[1], yaxis=:log10, label="SVD")
 p = plot!(nystrom_ranks, nystrom_errs, label="Nystrom")
-for i in 1:(length(fkt_ranks)-1)
-    p = scatter!(fkt_ranks[i], fkt_errs[i], label=string("FKT ", pows[i]))
-end
+# for i in 1:(length(fkt_ranks)-1)
+#     p = scatter!(fkt_ranks[i], fkt_errs[i], label=string("FKT ", pows[i]))
+# end
+println(fkt_ranks[end])
+println(fkt_errs[end])
 p = scatter!(fkt_ranks[end], fkt_errs[end], label=string("Pareto"),markershape=:hexagon)
 
 ytick_vals = [10.0^(-i) for i in 1:10]
