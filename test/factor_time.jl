@@ -14,44 +14,36 @@ GC.gc()
 r = Sym("r")
 
 d             = 3
-fkt_deg       = 10
-num_points    = 200_000
+num_points    = 100_000
+rtol = (1e-4)
 
-spread_param  = 2 # 2 for unif, 6 for norm
+
+spread_param  = 1 # 2 for unif, 6 for norm
 dct_n         = 100 # Iterations for discrete cosine transform
-kern          = 1 / (1+r^2)
-lkern         = lambdify(kern)
+σ = 2
+lkern(r)      = 1 / (1+(σ*r)^2)
+mat_kern(x,y) = lkern(norm(x-y))
 to            = TimerOutput()
-mat_kern(x,y) = 1 / (1+norm(x-y)^2)
 
-x_vecs        = [rand(d) / spread_param for _ in 1:num_points]
-# for idx in 1:length(x_vecs)
-#     x_vecs[idx][1] = abs(x_vecs[idx][1])
-#     x_vecs[idx][2:end] .= 0
-# end
-# y_vecs = [randn(d)./8 for _ in 1:num_points]
+x_vecs        = [randn(d) for _ in 1:num_points]
+centroid = sum(x_vecs)/length(x_vecs)
+for i in 1:length(x_vecs)
+    x_vecs[i] .-= centroid
+end
 
-# truth_mat  = mat_kern.(x_vecs, permutedims(x_vecs))
-# _, svals = svd(truth_mat);
+mn = maximum(norm.(x_vecs))
+for i in 1:length(x_vecs)
+    x_vecs[i] /= (mn)
+    x_vecs[i] *= (spread_param)
+    # x_vecs[i] /= norm(x_vecs[i])
+end
 
-rtol = 10.0^(-15)
-cfg = fkt_config(fkt_deg, d, dct_n, to, rtol)
-rtol = guess_fkt_err(lkern, x_vecs, cfg)
-cfg = fkt_config(fkt_deg, d, dct_n, to, rtol)
-
-
-
-# Perform FKTcheb
-@timeit to "Factor" U_mat = degen_kern_harmonic(lkern, x_vecs, cfg)
-# V_mat = transpose(U_mat)
+@timeit to "Factor" U_mat, diag = degen_kern_harmonic(lkern, x_vecs, rtol,to)
 fkt_rank = size(U_mat, 2)
-# fkt_guess = (U_mat*V_mat)
-# fkt_err_2norm = norm(fkt_guess-truth_mat, 2)/svals[1]
 println("Rank ", fkt_rank)
 println("Rtol ", rtol)
 println("Num points ", num_points)
-println("Trunc param ", fkt_deg)
-# println("Err ",fkt_err_2norm)
+# println("Trunc param ", best_deg)
 
 GC.gc()
 q_set = randperm(length(x_vecs))[1:fkt_rank]
