@@ -204,7 +204,7 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, rtol, to)
     end
     b = 2maximum(norm.(x_vecs))
 
-    degree = guess_fkt_err(lkern, b,  DCT_N, rtol)
+    degree = guess_hdf_err(lkern, b,  DCT_N, rtol)
     pij    = get_pij_table(degree+1)
     d      = length(x_vecs[1])
 

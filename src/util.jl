@@ -1,7 +1,7 @@
 
-# Struct of config params for fktcheb approximation
-struct fkt_config
-    fkt_deg::Int
+# Struct of config params for hdfcheb approximation
+struct hdf_config
+    hdf_deg::Int
     d::Int
     dct_n::Int
     to::TimerOutput
@@ -9,10 +9,10 @@ struct fkt_config
 end
 
 
-fkt_config(fkt_deg, d, dct_n, to) = fkt_config(fkt_deg, d, dct_n, to, 1e-6)
+hdf_config(hdf_deg, d, dct_n, to) = hdf_config(hdf_deg, d, dct_n, to, 1e-6)
 
 
-function guess_fkt_err(lkern,b,  dct_n, tol)
+function guess_hdf_err(lkern,b,  dct_n, tol)
     max_deg = 70
     a_vals = zeros(max_deg) # kern's coefs in cheb poly basis
     for i in 0:(max_deg-1)
