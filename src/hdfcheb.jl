@@ -9,6 +9,7 @@ using StaticArrays
 using SpecialFunctions
 using Polynomials
 using Plots
+using Random
 
 include("factor.jl")
 include("util.jl")

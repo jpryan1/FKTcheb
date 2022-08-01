@@ -355,7 +355,7 @@ function degen_kern_harmonic(lkern, x_vecs::Array{Array{Float64,1},1}, rtol, to)
         radial_x = (powers[:, pm_lower_deg:pm_upper_deg]
             *pm_mul[pm_lower_deg:pm_upper_deg,:])
 
-        for harmonic_ord in 1:size(x_harmonics, 2)
+        for harmonic_ord in randperm(size(x_harmonics, 2))
             for m in 0:(size(radial_x,2)-1)
                 cur_idx += 1
                 U_mat[:, cur_idx] .= (
