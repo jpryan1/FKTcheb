@@ -2,7 +2,7 @@ module FactorTest
 
 using Test
 
-using FKTcheb
+using hdfcheb
 using SymPy
 using TimerOutputs
 using LinearAlgebra
@@ -13,13 +13,13 @@ using Random
 r = Sym("r")
 
 rtol          = 1e-3
-num_points    = 100
+num_points    = 1000
 
 dct_n         = 100 # Iterations for discrete cosine transform
 
 # lkern(r)      = r^2
 # lkern(r)      = exp(1-r^2)
-σ = 4
+σ = 1
 
 # consider diagonal correction for obvious acc gain
 # lkern(r)      = (1+sqrt(5)abs(r)+(5/3)r^2)exp(-sqrt(5)abs(r))
@@ -29,7 +29,7 @@ mat_kern(x,y) = lkern(norm(x-y))
 
 # y_vecs = [randn(d)./8 for _ in 1:num_points]
 @testset "3D" begin
-    d         = 3
+    d         = 20
     to        = TimerOutput()
     x_vecs    = [randn(d) for _ in 1:num_points]
     mn = maximum(norm.(x_vecs))
@@ -37,7 +37,7 @@ mat_kern(x,y) = lkern(norm(x-y))
         x_vecs[i] /= (mn)
     end
     truth_mat = mat_kern.(x_vecs, permutedims(x_vecs))
-    # Perform FKTcheb
+    # Perform hdfcheb
     U_mat,diag = degen_kern_harmonic(lkern, x_vecs, rtol,to)
     V_mat = transpose(U_mat)
     guess = U_mat*diagm(diag)*V_mat
@@ -54,7 +54,7 @@ end
         x_vecs[i] /= (mn)
     end
      truth_mat = mat_kern.(x_vecs, permutedims(x_vecs))
-    # Perform FKTcheb
+    # Perform hdfcheb
     U_mat,diag = degen_kern_harmonic(lkern, x_vecs, rtol,to)
 
     V_mat = transpose(U_mat)
@@ -75,7 +75,7 @@ end
     end
         truth_mat = mat_kern.(x_vecs, permutedims(x_vecs))
 
-    # Perform FKTcheb
+    # Perform hdfcheb
     U_mat,diag = degen_kern_harmonic(lkern, x_vecs, rtol,to)
     V_mat = transpose(U_mat)
     guess = U_mat*diagm(diag)*V_mat
